@@ -1,0 +1,13 @@
+# Configuración BASE del config-client. Aplica a todos los perfiles salvo que
+# el fichero específico del perfil (config-client-desarrollo.yml,
+# config-client-produccion.yml) sobreescriba alguna propiedad.
+
+server:
+  port: 8082
+
+# Propiedades propias del servicio, leídas en AppProperties via @ConfigurationProperties.
+# Actúan como valores por defecto cuando no se activa ningún perfil concreto.
+app:
+  entorno: "default"
+  mensaje: "Configuración por defecto — no se ha activado ningún perfil"
+  limite-peticiones: 50

@@ -1,0 +1,73 @@
+server:
+  # Puerto dedicado del servicio de pedidos.
+  port: 8084
+
+spring:
+  r2dbc:
+    # URL de H2 en memoria compatible con R2DBC.
+    # CASE_INSENSITIVE_IDENTIFIERS=TRUE evita conflictos entre los identificadores en mayúsculas
+    # que H2 almacena por defecto y las consultas en minúsculas que genera Spring Data R2DBC.
+    url: r2dbc:h2:mem:///pedidosdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
+    password: ""
+
+  cloud:
+    stream:
+      # Declara el binding de salida usado por StreamBridge para publicar eventos PedidoCreado.
+      # La clave debe terminar en "-out-0" para que Spring Cloud Stream lo reconozca como output.
+      bindings:
+        pedidos-creados-out-0:
+          # Topic Kafka al que se publican los eventos.
+          # Debe coincidir con el topic que escucha servicio-productos (pedidos-creados).
+          destination: pedidos-creados
+      # Declara el binding como fuente activa para StreamBridge.
+      # Sin esta propiedad, el binding no se registra al arrancar y StreamBridge lo crearía dinámicamente.
+      source: pedidos-creados-out-0
+      kafka:
+        binder:
+          # Dirección del broker Kafka arrancado con docker/compose.yaml.
+          brokers: localhost:9092
+
+eureka:
+  client:
+    service-url:
+      # URL del servidor Eureka donde se registra este servicio.
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    # Prefiere IP en lugar de hostname para evitar problemas de resolución DNS
+    # en entornos Docker o donde el hostname no sea accesible entre contenedores.
+    prefer-ip-address: true
+
+# Configuración del Circuit Breaker Resilience4j para la llamada a servicio-productos.
+# Los umbrales son permisivos para entornos de desarrollo con pocos servicios arrancados.
+resilience4j:
+  circuitbreaker:
+    instances:
+      producto-cb:
+        # Porcentaje de llamadas fallidas para abrir el circuito.
+        failure-rate-threshold: 50
+        # Mínimo de llamadas antes de evaluar si se abre el circuito.
+        minimum-number-of-calls: 5
+        # Tiempo en estado OPEN antes de pasar a HALF_OPEN y reintentar.
+        wait-duration-in-open-state: 10s
+        # Número de llamadas en HALF_OPEN para decidir si volver a CLOSED.
+        permitted-number-of-calls-in-half-open-state: 3
+        # Registra la excepción en la métrica pero no la cuenta como fallo
+        # cuando el servicio simplemente no existe (404).
+        record-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.reactive.function.client.WebClientResponseException.ServiceUnavailable
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,circuitbreakers
+  endpoint:
+    health:
+      show-details: always
+  # Expone las métricas de Resilience4j en el actuator de health
+  health:
+    circuitbreakers:
+      enabled: true

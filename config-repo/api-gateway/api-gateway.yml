@@ -1,0 +1,56 @@
+# Configuración del api-gateway. Las rutas definen cómo el gateway reenvía
+# las peticiones entrantes a los microservicios internos.
+#
+# IMPORTANTE: En Spring Cloud Gateway 5.x (Oakwood) el prefijo de configuración
+# cambió de 'spring.cloud.gateway' a 'spring.cloud.gateway.server.webflux'.
+
+server:
+  port: 8090
+
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+
+            # --- Ruta: eureka-client ---
+            # Las peticiones a /eureka-client/** se reenvían al servicio 'eureka-client'
+            # registrado en Eureka. El LoadBalancer elige la instancia disponible.
+            - id: ruta-eureka-client
+              uri: lb://eureka-client
+              predicates:
+                # Se activa cuando el path de la petición empieza por /eureka-client/
+                - Path=/eureka-client/**
+              filters:
+                # Elimina el primer segmento del path antes de reenviar.
+                # /eureka-client/hola → /hola (tal como lo espera el servicio destino)
+                - StripPrefix=1
+
+            # --- Ruta: config-client ---
+            - id: ruta-config-client
+              uri: lb://config-client
+              predicates:
+                - Path=/config-client/**
+              filters:
+                - StripPrefix=1
+
+            # --- Ruta: servicio-productos ---
+            # Expone el CRUD reactivo de productos a través del gateway.
+            # Ejemplo: GET /servicio-productos/productos → GET /productos en el servicio
+            - id: ruta-servicio-productos
+              uri: lb://servicio-productos
+              predicates:
+                - Path=/servicio-productos/**
+              filters:
+                - StripPrefix=1
+
+            # --- Ruta: servicio-pedidos ---
+            # Expone el CRUD de pedidos y la creación con publicación de evento Kafka.
+            # Ejemplo: POST /servicio-pedidos/pedidos → POST /pedidos en el servicio
+            - id: ruta-servicio-pedidos
+              uri: lb://servicio-pedidos
+              predicates:
+                - Path=/servicio-pedidos/**
+              filters:
+                - StripPrefix=1

@@ -1,0 +1,15 @@
+# Configuración específica del perfil 'produccion'.
+# Sobreescribe las propiedades de config-client.yml para este entorno.
+#
+# Se activa con: --spring.profiles.active=produccion
+
+app:
+  entorno: "produccion"
+  mensaje: "Estás en el perfil de PRODUCCIÓN — logs mínimos, límite alto"
+  limite-peticiones: 5000
+
+# En producción solo se registran advertencias y errores para reducir el volumen de logs.
+logging:
+  level:
+    com.cursosdedesarrollo: WARN
+    org.springframework.cloud.config: WARN

@@ -1,0 +1,13 @@
+# Configuración compartida por TODOS los servicios del ecosistema.
+# Cualquier propiedad aquí definida aplica a todos salvo que el fichero
+# específico del servicio la sobreescriba.
+
+# --- Actuator (común a todos) ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always
