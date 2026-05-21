@@ -1,0 +1,42 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    # Nombre con el que este servicio se registra en Eureka y aparece en el dashboard.
+    # Otros servicios usarán este nombre para localizarlo (sin conocer host ni puerto).
+    name: eureka-client
+
+eureka:
+  client:
+    service-url:
+      # URL del servidor Eureka donde este cliente se registra y consulta el registro.
+      defaultZone: http://localhost:8761/eureka/
+
+  instance:
+    # Registra la IP en lugar del hostname del sistema operativo. Recomendado en
+    # entornos Docker o máquinas con hostname no resoluble desde otros servicios.
+    prefer-ip-address: true
+
+    # Intervalo en segundos con el que el cliente envía heartbeats al servidor.
+    # Por defecto es 30 s; se baja a 10 s para que los cambios de estado se
+    # reflejen más rápido en el dashboard durante el desarrollo.
+    lease-renewal-interval-in-seconds: 10
+
+    # Tiempo en segundos que Eureka espera sin recibir heartbeat antes de
+    # considerar la instancia caída y eliminarla del registro.
+    # Por defecto es 90 s (3 × renewal-interval); se ajusta a 30 s en consonancia
+    # con el intervalo reducido anterior.
+    lease-expiration-duration-in-seconds: 30
+
+# --- Actuator ---
+management:
+  endpoints:
+    web:
+      exposure:
+        # Endpoints expuestos en /actuator/*. Por defecto solo 'health' es público.
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      # Muestra el detalle completo (diskSpace, ping, eureka…) en lugar de solo UP/DOWN.
+      show-details: always

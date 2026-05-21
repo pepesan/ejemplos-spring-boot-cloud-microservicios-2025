@@ -23,7 +23,8 @@ Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring C
 ejemplos-spring-boot-cloud-microservicios/
 ├── build.gradle.kts        ← configuración común heredada por todos los módulos
 ├── settings.gradle.kts     ← registro de módulos
-└── eureka-server/          ← servidor de registro y descubrimiento
+├── eureka-server/          ← servidor de registro y descubrimiento
+└── eureka-client/          ← microservicio cliente que se registra en Eureka
 ```
 
 ## Módulos
@@ -38,7 +39,44 @@ Servidor de registro y descubrimiento basado en Netflix Eureka. Todos los micros
 
 Para que un microservicio se registre en este servidor debe incluir `spring-cloud-starter-netflix-eureka-client` y apuntar su `eureka.client.service-url.defaultZone` a `http://localhost:8761/eureka/`.
 
-## Comandos
+> **Auto-preservación desactivada en desarrollo:** por defecto Eureka muestra el aviso `EMERGENCY! EUREKA MAY BE INCORRECTLY CLAIMING INSTANCES ARE UP` cuando recibe menos heartbeats de los esperados (umbral 85%). Con pocos servicios esto se dispara continuamente, por lo que en esta configuración está desactivado (`enable-self-preservation: false`). En producción con muchas instancias conviene reactivarlo.
+
+### eureka-client
+
+Microservicio de ejemplo que se registra automáticamente en el servidor Eureka al arrancar y expone endpoints reactivos (WebFlux) para demostrar el uso de `DiscoveryClient`.
+
+- **Puerto:** `8081`
+- **Dependencias clave:** `spring-cloud-starter-netflix-eureka-client`, `spring-boot-starter-webflux`
+- **Requiere:** `eureka-server` arrancado en `localhost:8761`
+
+| Endpoint | Descripción |
+|---|---|
+| `GET /` | Estado del servicio |
+| `GET /hola` | Saludo simple para comprobar que el servicio está activo |
+| `GET /servicios` | Lista los nombres de todos los servicios registrados en Eureka |
+| `GET /instancias` | Muestra las instancias propias con su `serviceId` y URI |
+
+> **Nota sobre `DiscoveryClient`:** es la abstracción genérica de Spring Cloud para el descubrimiento de servicios (funciona con Eureka, Consul, Zookeeper…). Sus llamadas son bloqueantes; para una integración completamente reactiva usar `ReactiveDiscoveryClient`.
+
+## Orden de arranque recomendado
+
+```bash
+# 1. Arrancar primero el registro
+./gradlew :eureka-server:bootRun
+
+# 2. Arrancar el cliente (en otra terminal)
+./gradlew :eureka-client:bootRun
+
+# 3. Verificar el registro en el dashboard
+# http://localhost:8761
+
+# 4. Probar los endpoints del cliente
+curl http://localhost:8081/hola
+curl http://localhost:8081/servicios
+curl http://localhost:8081/instancias
+```
+
+## Comandos Gradle
 
 ```bash
 # Construir todos los módulos
@@ -46,19 +84,35 @@ Para que un microservicio se registre en este servidor debe incluir `spring-clou
 
 # Construir un módulo concreto
 ./gradlew :eureka-server:build
+./gradlew :eureka-client:build
 
-# Arrancar el servidor Eureka
+# Arrancar un servicio
 ./gradlew :eureka-server:bootRun
+./gradlew :eureka-client:bootRun
 
 # Ejecutar tests de un módulo
 ./gradlew :eureka-server:test
+./gradlew :eureka-client:test
 
 # Ejecutar una clase de test concreta
-./gradlew :eureka-server:test --tests "com.cursosdedesarrollo.eurekaserver.EurekaServerApplicationTest"
+./gradlew :eureka-client:test --tests "com.cursosdedesarrollo.eurekaclient.EurekaClientApplicationTest"
 
 # Construir sin tests
 ./gradlew build -x test
 ```
+
+## Actuator
+
+Todos los módulos exponen los siguientes endpoints de monitorización bajo `/actuator`:
+
+| Endpoint | URL ejemplo | Descripción |
+|---|---|---|
+| `health` | `http://localhost:8761/actuator/health` | Estado del servicio con detalle completo |
+| `info` | `http://localhost:8761/actuator/info` | Información de la aplicación |
+| `metrics` | `http://localhost:8761/actuator/metrics` | Métricas de JVM y uso de recursos |
+| `env` | `http://localhost:8761/actuator/env` | Propiedades del entorno activas |
+
+Sustituir el puerto `8761` por el del módulo correspondiente (`8081` para `eureka-client`).
 
 ## Convenciones de los módulos
 

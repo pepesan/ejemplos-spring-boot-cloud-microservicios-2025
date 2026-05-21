@@ -1,17 +1,50 @@
+# Puerto estándar de Eureka; los clientes apuntan a este puerto por convención.
 server:
   port: 8761
 
 spring:
   application:
+    # Nombre con el que este servidor aparece en los logs y en el propio dashboard.
     name: eureka-server
 
 eureka:
   instance:
     hostname: localhost
+
   client:
+    # Este servidor no se registra en sí mismo: no es un cliente, es el registro.
     register-with-eureka: false
+    # Tampoco necesita obtener la lista de servicios registrados.
     fetch-registry: false
     service-url:
       defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+
   server:
+    # En arranque en frío Eureka espera a recibir réplicas de otros nodos antes de
+    # servir el registro. En local no hay otros nodos, así que se elimina esa espera.
     wait-time-in-ms-when-sync-empty: 0
+
+    # --- Auto-preservación (EMERGENCY en el dashboard) ---
+    # Eureka activa el modo de auto-preservación cuando recibe menos heartbeats
+    # de los esperados (umbral del 85%). En ese estado NO expira instancias caídas
+    # y muestra el aviso "EMERGENCY! EUREKA MAY BE INCORRECTLY CLAIMING INSTANCES
+    # ARE UP". En producción esto protege contra pérdidas de red masivas, pero en
+    # desarrollo con pocos servicios se dispara continuamente y genera ruido.
+    enable-self-preservation: false
+
+    # Umbral mínimo de renovaciones recibidas respecto a las esperadas (0.0–1.0).
+    # Se baja al 49% como red de seguridad por si se reactiva la auto-preservación.
+    # El valor por defecto es 0.85 (85%).
+    renewal-percent-threshold: 0.49
+
+# --- Actuator ---
+management:
+  endpoints:
+    web:
+      exposure:
+        # Endpoints expuestos en /actuator/*. Por defecto solo 'health' es público.
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      # Muestra el detalle completo (diskSpace, ping, eureka…) en lugar de solo UP/DOWN.
+      show-details: always
