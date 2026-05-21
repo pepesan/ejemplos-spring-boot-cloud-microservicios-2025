@@ -26,6 +26,7 @@ ejemplos-spring-boot-cloud-microservicios/
 ├── config-repo/            ← YAML centralizados, organizados en una subcarpeta por servicio
 ├── config-server/          ← servidor centralizado de configuración (Spring Cloud Config)
 ├── config-client/          ← cliente del Config Server con perfiles desarrollo/produccion
+├── api-gateway/            ← punto de entrada único, enruta peticiones a los microservicios
 ├── eureka-server/          ← servidor de registro y descubrimiento
 └── eureka-client/          ← microservicio cliente que se registra en Eureka
 ```
@@ -52,6 +53,22 @@ spring:
   config:
     import: "optional:configserver:http://localhost:8888"
 ```
+
+### api-gateway
+
+Punto de entrada único al ecosistema. Recibe todas las peticiones externas y las enruta al microservicio interno correspondiente usando el registro de Eureka para resolver las instancias disponibles (balanceo de carga incluido).
+
+- **Puerto:** `8090`
+- **Dependencia clave:** `spring-cloud-starter-gateway-server-webflux` (renombrado en Gateway 5.x / Oakwood)
+- **Rutas:** definidas en `config-repo/api-gateway/api-gateway.yml`
+
+```bash
+# Acceder a los servicios internos a través del gateway
+curl http://localhost:8090/eureka-client/hola
+curl http://localhost:8090/config-client/config
+```
+
+El filtro `StripPrefix=1` elimina el prefijo de la ruta antes de reenviar la petición al servicio destino (`/eureka-client/hola` → `/hola`).
 
 ### config-client
 
@@ -161,10 +178,12 @@ curl http://localhost:8081/instancias
 ./gradlew :eureka-client:build
 ./gradlew :config-server:build
 ./gradlew :config-client:build
+./gradlew :api-gateway:build
 
 # Arrancar un servicio
 ./gradlew :eureka-server:bootRun
 ./gradlew :config-server:bootRun
+./gradlew :api-gateway:bootRun
 ./gradlew :eureka-client:bootRun
 ./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
 
@@ -173,6 +192,7 @@ curl http://localhost:8081/instancias
 ./gradlew :eureka-client:test
 ./gradlew :config-server:test
 ./gradlew :config-client:test
+./gradlew :api-gateway:test
 
 # Ejecutar una clase de test concreta
 ./gradlew :eureka-client:test --tests "com.cursosdedesarrollo.eurekaclient.EurekaClientApplicationTest"
@@ -192,7 +212,7 @@ Todos los módulos exponen los siguientes endpoints de monitorización bajo `/ac
 | `metrics` | `http://localhost:8761/actuator/metrics` | Métricas de JVM y uso de recursos |
 | `env` | `http://localhost:8761/actuator/env` | Propiedades del entorno activas |
 
-Sustituir el puerto por el del módulo correspondiente: `8761` (eureka-server), `8888` (config-server), `8081` (eureka-client), `8082` (config-client).
+Sustituir el puerto por el del módulo correspondiente: `8761` (eureka-server), `8888` (config-server), `8090` (api-gateway), `8081` (eureka-client), `8082` (config-client).
 
 ## Convenciones de los módulos
 

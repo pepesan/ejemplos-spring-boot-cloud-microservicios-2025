@@ -1,0 +1,32 @@
+spring:
+  application:
+    # Nombre con el que el gateway se registra en Eureka y solicita su config al Config Server.
+    name: api-gateway
+
+  config:
+    # Las rutas y el puerto se reciben del Config Server.
+    # 'optional:' permite arrancar sin Config Server (útil en desarrollo aislado).
+    import: "optional:configserver:http://localhost:8888"
+
+# El gateway se registra en Eureka como cualquier otro microservicio.
+# Esto permite que otros sistemas lo localicen por nombre.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# --- Actuator ---
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,gateway
+  endpoint:
+    health:
+      show-details: always
+    # El endpoint /actuator/gateway expone las rutas activas, filtros y predicados.
+    # Muy útil para depurar qué rutas están configuradas en tiempo de ejecución.
+    gateway:
+      enabled: true
