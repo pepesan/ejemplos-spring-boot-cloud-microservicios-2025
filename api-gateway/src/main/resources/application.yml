@@ -28,5 +28,7 @@ management:
       show-details: always
     # El endpoint /actuator/gateway expone las rutas activas, filtros y predicados.
     # Muy útil para depurar qué rutas están configuradas en tiempo de ejecución.
+    # Nota: en Gateway 5.x el endpoint puede no estar disponible si el actuator
+    # de gateway no está en el classpath de forma separada.
     gateway:
       enabled: true

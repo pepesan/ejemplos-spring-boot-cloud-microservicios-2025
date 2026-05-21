@@ -12,7 +12,9 @@ Punto de entrada único al ecosistema de microservicios. Recibe todas las petici
 | Spring Boot Actuator | `spring-boot-starter-actuator` |
 | Puerto | `8090` |
 
-> **Nota sobre el nombre del artefacto:** en Spring Cloud Gateway 5.x (Oakwood, 2025.1.1) el starter reactivo fue renombrado de `spring-cloud-starter-gateway` a `spring-cloud-starter-gateway-server-webflux`.
+> **Cambios en Spring Cloud Gateway 5.x (Oakwood, 2025.1.1):**
+> - El starter reactivo fue renombrado de `spring-cloud-starter-gateway` a `spring-cloud-starter-gateway-server-webflux`.
+> - El prefijo de configuración cambió de `spring.cloud.gateway` a `spring.cloud.gateway.server.webflux`. Todas las rutas, filtros y predicados definidos en YAML deben usar el nuevo prefijo.
 
 ## Requisitos previos
 
@@ -34,8 +36,9 @@ Las rutas viven en `config-repo/api-gateway/api-gateway.yml` y se cargan desde e
 
 | ID de ruta | Entrada (cliente externo) | Destino interno | Path reenviado |
 |---|---|---|---|
-| `ruta-eureka-client` | `GET /eureka-client/**` | `lb://eureka-client` | `/**` (sin prefijo) |
-| `ruta-config-client` | `GET /config-client/**` | `lb://config-client` | `/**` (sin prefijo) |
+| `ruta-eureka-client` | `/eureka-client/**` | `lb://eureka-client` | `/**` (sin prefijo) |
+| `ruta-config-client` | `/config-client/**` | `lb://config-client` | `/**` (sin prefijo) |
+| `ruta-servicio-productos` | `/servicio-productos/**` | `lb://servicio-productos` | `/**` (sin prefijo) |
 
 ### Cómo funciona una petición
 
@@ -51,13 +54,34 @@ Cliente → GET http://localhost:8090/eureka-client/hola
 ### Probar las rutas
 
 ```bash
-# A través del gateway (puerto 8080) — equivalente a llamar directamente a cada servicio
+# --- eureka-client ---
 curl http://localhost:8090/eureka-client/
 curl http://localhost:8090/eureka-client/hola
 curl http://localhost:8090/eureka-client/servicios
 curl http://localhost:8090/eureka-client/instancias
 
+# --- config-client ---
 curl http://localhost:8090/config-client/config
+
+# --- servicio-productos (CRUD) ---
+# Listar todos los productos
+curl http://localhost:8090/servicio-productos/productos
+
+# Obtener producto por id (404 si no existe)
+curl http://localhost:8090/servicio-productos/productos/1
+
+# Crear producto (devuelve 201)
+curl -X POST http://localhost:8090/servicio-productos/productos \
+  -H "Content-Type: application/json" \
+  -d '{"nombre":"Hub USB-C","descripcion":"7 puertos USB 3.2","precio":39.99,"stock":75}'
+
+# Actualizar producto (404 si no existe)
+curl -X PUT http://localhost:8090/servicio-productos/productos/1 \
+  -H "Content-Type: application/json" \
+  -d '{"nombre":"Teclado mecánico PRO","descripcion":"RGB","precio":109.99,"stock":40}'
+
+# Eliminar producto (204 si existe, 404 si no)
+curl -X DELETE http://localhost:8090/servicio-productos/productos/1
 ```
 
 ## Añadir una nueva ruta
@@ -65,12 +89,18 @@ curl http://localhost:8090/config-client/config
 Editar `config-repo/api-gateway/api-gateway.yml` y añadir una entrada en `spring.cloud.gateway.routes`:
 
 ```yaml
-- id: ruta-nuevo-servicio
-  uri: lb://nombre-en-eureka
-  predicates:
-    - Path=/nuevo-servicio/**
-  filters:
-    - StripPrefix=1
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: ruta-nuevo-servicio
+              uri: lb://nombre-en-eureka
+              predicates:
+                - Path=/nuevo-servicio/**
+              filters:
+                - StripPrefix=1
 ```
 
 El Config Server sirve el cambio sin reiniciar el gateway (siempre que esté levantado).

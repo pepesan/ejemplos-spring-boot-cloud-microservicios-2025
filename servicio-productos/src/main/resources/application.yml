@@ -1,0 +1,17 @@
+spring:
+  application:
+    # Nombre que se registra en Eureka y que el Config Server usa para
+    # buscar el fichero config-repo/servicio-productos/servicio-productos.yml
+    name: servicio-productos
+
+  config:
+    # Importa la configuración desde el Config Server antes de arrancar.
+    # "optional:" evita que el servicio falle si el Config Server no está disponible,
+    # lo que permite arrancar en modo standalone durante el desarrollo.
+    import: "optional:configserver:http://localhost:8888"
+
+  # Inicialización del esquema SQL al arrancar.
+  # R2DBC no ejecuta schema.sql por defecto; este ajuste fuerza su ejecución.
+  sql:
+    init:
+      mode: always

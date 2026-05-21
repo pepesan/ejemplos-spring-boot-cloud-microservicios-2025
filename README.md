@@ -23,15 +23,47 @@ Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring C
 ejemplos-spring-boot-cloud-microservicios/
 ├── build.gradle.kts        ← configuración común heredada por todos los módulos
 ├── settings.gradle.kts     ← registro de módulos
+├── build.gradle.kts        ← configuración común heredada por todos los módulos
+├── settings.gradle.kts     ← registro de módulos
 ├── config-repo/            ← YAML centralizados, organizados en una subcarpeta por servicio
+├── docker/                 ← compose.yaml con Kafka, Kafka UI y futura infraestructura
 ├── config-server/          ← servidor centralizado de configuración (Spring Cloud Config)
 ├── config-client/          ← cliente del Config Server con perfiles desarrollo/produccion
 ├── api-gateway/            ← punto de entrada único, enruta peticiones a los microservicios
 ├── eureka-server/          ← servidor de registro y descubrimiento
-└── eureka-client/          ← microservicio cliente que se registra en Eureka
+├── eureka-client/          ← microservicio cliente que se registra en Eureka
+└── servicio-productos/     ← CRUD reactivo de productos + consumidor Kafka de PedidoCreado
 ```
 
 ## Módulos
+
+### servicio-productos
+
+Microservicio reactivo de gestión de catálogo de productos. Demuestra el uso de
+Spring WebFlux + R2DBC para persistencia reactiva y Spring Cloud Stream para
+consumir eventos Kafka.
+
+- **Puerto:** `8083`
+- **Base de datos:** H2 en memoria (R2DBC) — se puebla con `schema.sql` al arrancar
+- **Topic Kafka escuchado:** `pedidos-creados`
+- **Requiere:** `eureka-server`, `config-server` y Kafka arrancados
+
+```bash
+# CRUD directo
+curl http://localhost:8083/productos
+curl http://localhost:8083/productos/1
+curl -X POST http://localhost:8083/productos \
+  -H "Content-Type: application/json" \
+  -d '{"nombre":"Hub USB-C","descripcion":"7 puertos","precio":39.99,"stock":75}'
+
+# A través del API Gateway
+curl http://localhost:8090/servicio-productos/productos
+```
+
+Al recibir un evento `PedidoCreado` en Kafka, el stock del producto indicado se
+decrementa automáticamente. El stock nunca baja de 0.
+
+---
 
 ### config-server
 
@@ -145,26 +177,35 @@ Microservicio de ejemplo que se registra automáticamente en el servidor Eureka 
 ## Orden de arranque recomendado
 
 ```bash
+# 0. Infraestructura (Kafka, Kafka UI)
+docker compose -f docker/compose.yaml up -d
+
 # 1. Arrancar el servidor Eureka
 ./gradlew :eureka-server:bootRun
 
 # 2. Arrancar el Config Server (en otra terminal)
 ./gradlew :config-server:bootRun
 
-# 3. Arrancar el config-client con el perfil deseado (en otra terminal)
+# 3. Arrancar el API Gateway (en otra terminal)
+./gradlew :api-gateway:bootRun
+
+# 4. Arrancar el config-client con el perfil deseado (en otra terminal)
 ./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
 
-# 4. Arrancar el eureka-client (en otra terminal)
+# 5. Arrancar el eureka-client (en otra terminal)
 ./gradlew :eureka-client:bootRun
 
-# 5. Verificar el registro en el dashboard de Eureka
+# 6. Arrancar el servicio de productos (en otra terminal)
+./gradlew :servicio-productos:bootRun
+
+# 7. Verificar el registro en el dashboard de Eureka
 # http://localhost:8761
 
-# 6. Probar los endpoints
-curl http://localhost:8082/config          # configuración activa del config-client
-curl http://localhost:8081/hola
-curl http://localhost:8081/servicios
-curl http://localhost:8081/instancias
+# 8. Probar los endpoints
+curl http://localhost:8082/config                           # config-client
+curl http://localhost:8081/hola                            # eureka-client directo
+curl http://localhost:8083/productos                       # servicio-productos directo
+curl http://localhost:8090/servicio-productos/productos    # a través del gateway
 ```
 
 ## Comandos Gradle
@@ -179,6 +220,7 @@ curl http://localhost:8081/instancias
 ./gradlew :config-server:build
 ./gradlew :config-client:build
 ./gradlew :api-gateway:build
+./gradlew :servicio-productos:build
 
 # Arrancar un servicio
 ./gradlew :eureka-server:bootRun
@@ -186,6 +228,7 @@ curl http://localhost:8081/instancias
 ./gradlew :api-gateway:bootRun
 ./gradlew :eureka-client:bootRun
 ./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
+./gradlew :servicio-productos:bootRun
 
 # Ejecutar tests de un módulo
 ./gradlew :eureka-server:test
@@ -193,9 +236,11 @@ curl http://localhost:8081/instancias
 ./gradlew :config-server:test
 ./gradlew :config-client:test
 ./gradlew :api-gateway:test
+./gradlew :servicio-productos:test
 
 # Ejecutar una clase de test concreta
 ./gradlew :eureka-client:test --tests "com.cursosdedesarrollo.eurekaclient.EurekaClientApplicationTest"
+./gradlew :servicio-productos:test --tests "com.cursosdedesarrollo.servicioproductos.ServicioProductosApplicationTest"
 
 # Construir sin tests
 ./gradlew build -x test
@@ -212,7 +257,7 @@ Todos los módulos exponen los siguientes endpoints de monitorización bajo `/ac
 | `metrics` | `http://localhost:8761/actuator/metrics` | Métricas de JVM y uso de recursos |
 | `env` | `http://localhost:8761/actuator/env` | Propiedades del entorno activas |
 
-Sustituir el puerto por el del módulo correspondiente: `8761` (eureka-server), `8888` (config-server), `8090` (api-gateway), `8081` (eureka-client), `8082` (config-client).
+Sustituir el puerto por el del módulo correspondiente: `8761` (eureka-server), `8888` (config-server), `8090` (api-gateway), `8081` (eureka-client), `8082` (config-client), `8083` (servicio-productos).
 
 ## Convenciones de los módulos
 
