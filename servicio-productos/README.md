@@ -14,6 +14,7 @@ mediante Spring WebFlux + R2DBC (H2 en memoria) y consume eventos Kafka de tipo
 | Registro de servicio  | Spring Cloud Netflix Eureka Client            |
 | Configuración externa | Spring Cloud Config Client                    |
 | Monitorización        | Spring Boot Actuator                          |
+| Tracing distribuido   | `spring-boot-starter-zipkin` (Micrometer Tracing + Brave + Zipkin) |
 | Boilerplate           | Lombok                                        |
 
 ## Puerto
@@ -132,6 +133,30 @@ de ejemplo.
 
 La base de datos **no persiste** entre reinicios del servicio, lo que la hace ideal
 para ejemplos y tests.
+
+## Tracing distribuido
+
+Cada petición HTTP y cada mensaje Kafka consumido generan spans que se envían a Zipkin. El `traceId` propagado por `servicio-pedidos` en la cabecera Kafka (`b3`) permite enlazar el span del consumidor Kafka con la petición HTTP original que creó el pedido.
+
+```
+POST /pedidos (servicio-pedidos)  [traceId: abc123, spanId: 001]
+  └─► Kafka: pedidos-creados      [traceId: abc123, spanId: 002]
+       └─► procesarPedido()       [traceId: abc123, spanId: 003]  ← span de este servicio
+```
+
+| Propiedad | Valor | Fuente |
+|---|---|---|
+| `management.tracing.sampling.probability` | `1.0` (100 % en desarrollo) | `config-repo/application.yml` |
+| `management.zipkin.tracing.endpoint` | `http://localhost:9411/api/v2/spans` | `config-repo/application.yml` |
+
+### Cómo ver las trazas en Zipkin
+
+1. Abre http://localhost:9411
+2. Pulsa **`+`** → elige **`serviceName`** → escribe `servicio-productos`
+3. Pulsa **Run Query**
+4. Haz click en cualquier fila para ver el detalle del span
+
+Para ver el span del consumidor Kafka enlazado con la traza del pedido que lo originó, busca en `servicio-pedidos` con `spanName = http post /pedidos` y abre la traza de 5 spans — el span `procesarPedido` de este servicio aparece como hijo del envío Kafka.
 
 ## Tests
 

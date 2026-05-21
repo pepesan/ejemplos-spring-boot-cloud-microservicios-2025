@@ -10,6 +10,7 @@ Microservicio cliente del Config Server que demuestra cómo cargar configuració
 | Spring Cloud Config Client | `spring-cloud-starter-config` |
 | Spring Cloud Netflix Eureka Client | `spring-cloud-starter-netflix-eureka-client` |
 | Spring Boot Actuator | `spring-boot-starter-actuator` |
+| Tracing distribuido | `spring-boot-starter-zipkin` (Micrometer Tracing + Brave + Zipkin) |
 | Puerto | `8082` (recibido del Config Server) |
 
 ## Requisitos previos
@@ -203,6 +204,22 @@ spring:
 | Método | Ruta | Descripción | Tipo reactivo |
 |---|---|---|---|
 | `GET` | `/config` | Propiedades activas recibidas del Config Server | `Mono<Map>` |
+
+## Tracing distribuido
+
+Cada petición HTTP recibida genera un **span** que se envía a Zipkin. La configuración de tracing se recibe del Config Server mediante `config-repo/application.yml` (compartida por todos los servicios).
+
+| Propiedad | Valor | Fuente |
+|---|---|---|
+| `management.tracing.sampling.probability` | `1.0` (100 % en desarrollo) | `config-repo/application.yml` |
+| `management.zipkin.tracing.endpoint` | `http://localhost:9411/api/v2/spans` | `config-repo/application.yml` |
+
+### Cómo ver las trazas en Zipkin
+
+1. Abre http://localhost:9411
+2. Pulsa **`+`** → elige **`serviceName`** → escribe `config-client`
+3. Pulsa **Run Query**
+4. Haz click en cualquier fila para ver el detalle del span
 
 ## Actuator
 

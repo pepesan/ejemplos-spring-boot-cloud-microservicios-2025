@@ -21,6 +21,7 @@ dependencies {
 
     // Monitorización y health checks
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-zipkin")
 
     // Binder en memoria para tests: sustituye Kafka sin necesitar broker real
     testImplementation("org.springframework.cloud:spring-cloud-stream-test-binder")

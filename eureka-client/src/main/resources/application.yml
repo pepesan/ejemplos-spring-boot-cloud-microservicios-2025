@@ -29,14 +29,18 @@ eureka:
     # con el intervalo reducido anterior.
     lease-expiration-duration-in-seconds: 30
 
-# --- Actuator ---
+# --- Actuator + Tracing ---
 management:
   endpoints:
     web:
       exposure:
-        # Endpoints expuestos en /actuator/*. Por defecto solo 'health' es público.
-        include: health,info,metrics,env
+        include: health,info,metrics,env,tracing
   endpoint:
     health:
-      # Muestra el detalle completo (diskSpace, ping, eureka…) en lugar de solo UP/DOWN.
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans

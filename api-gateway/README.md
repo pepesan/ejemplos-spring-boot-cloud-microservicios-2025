@@ -10,6 +10,7 @@ Punto de entrada único al ecosistema de microservicios. Recibe todas las petici
 | Spring Cloud Netflix Eureka Client | `spring-cloud-starter-netflix-eureka-client` |
 | Spring Cloud Config Client | `spring-cloud-starter-config` |
 | Spring Boot Actuator | `spring-boot-starter-actuator` |
+| Tracing distribuido | `spring-boot-starter-zipkin` (Micrometer Tracing + Brave + Zipkin) |
 | Puerto | `8090` |
 
 > **Cambios en Spring Cloud Gateway 5.x (Oakwood, 2025.1.1):**
@@ -149,6 +150,28 @@ Transformaciones que se aplican a la petición o respuesta. Los más comunes:
 ### Esquema `lb://`
 
 Indica al gateway que use el LoadBalancer de Spring Cloud para resolver la URI. El LoadBalancer consulta Eureka y elige una instancia disponible del servicio con ese nombre (balanceo round-robin por defecto).
+
+## Tracing distribuido
+
+El gateway genera un span por cada petición entrante y propaga el `traceId` al servicio destino mediante cabeceras HTTP (`b3` / `traceparent`). En Zipkin se ve la traza completa: un span del gateway y otro del servicio interno, todos bajo el mismo `traceId`.
+
+```
+Cliente → GET /servicio-pedidos/pedidos
+  span: api-gateway          [traceId: abc123, spanId: 001]
+    └─► span: servicio-pedidos [traceId: abc123, spanId: 002]
+```
+
+| Propiedad | Valor | Fuente |
+|---|---|---|
+| `management.tracing.sampling.probability` | `1.0` (100 % en desarrollo) | `config-repo/application.yml` |
+| `management.zipkin.tracing.endpoint` | `http://localhost:9411/api/v2/spans` | `config-repo/application.yml` |
+
+### Cómo ver las trazas en Zipkin
+
+1. Abre http://localhost:9411
+2. Pulsa **`+`** → elige **`serviceName`** → escribe `api-gateway`
+3. Pulsa **Run Query**
+4. Haz click en cualquier fila para ver el detalle del span (gateway + servicio destino bajo el mismo `traceId`)
 
 ## Actuator
 

@@ -9,6 +9,7 @@ Microservicio de ejemplo que demuestra el registro automático en Eureka y el us
 | Spring Boot WebFlux | `spring-boot-starter-webflux` |
 | Spring Cloud Netflix Eureka Client | `spring-cloud-starter-netflix-eureka-client` |
 | Spring Boot Actuator | `spring-boot-starter-actuator` |
+| Tracing distribuido | `spring-boot-starter-zipkin` (Micrometer Tracing + Brave + Zipkin) |
 | Puerto | `8081` |
 
 ## Requisitos previos
@@ -48,6 +49,24 @@ curl http://localhost:8081/instancias
 | `prefer-ip-address` | `true` | Registra la IP en lugar del hostname; recomendado en Docker o redes donde el hostname no es resoluble |
 | `lease-renewal-interval-in-seconds` | `10` | Heartbeat cada 10 s (por defecto 30 s) para reflejar cambios más rápido en desarrollo |
 | `lease-expiration-duration-in-seconds` | `30` | Eureka expira la instancia a los 30 s sin heartbeat (ajustado al intervalo reducido) |
+
+## Tracing distribuido
+
+Cada petición HTTP recibida genera un **span** que se envía a Zipkin con `traceId` y `spanId`. El `traceId` se propaga a cualquier llamada saliente mediante cabeceras HTTP estándar (`b3` / `traceparent`).
+
+| Propiedad | Valor | Fuente |
+|---|---|---|
+| `management.tracing.sampling.probability` | `1.0` (100 % en desarrollo) | `application.yml` local |
+| `management.zipkin.tracing.endpoint` | `http://localhost:9411/api/v2/spans` | `application.yml` local |
+
+> Este servicio no usa Config Server, por lo que la config de tracing está en su propio `application.yml`. Los servicios que sí usan Config Server reciben esta config desde `config-repo/application.yml`.
+
+### Cómo ver las trazas en Zipkin
+
+1. Abre http://localhost:9411
+2. Pulsa **`+`** → elige **`serviceName`** → escribe `eureka-client`
+3. Pulsa **Run Query**
+4. Haz click en cualquier fila para ver el detalle del span
 
 ## Actuator
 

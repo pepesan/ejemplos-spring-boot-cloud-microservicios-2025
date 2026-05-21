@@ -6,6 +6,7 @@ dependencies {
     implementation("org.springframework.cloud:spring-cloud-starter-config")
     implementation("org.springframework.cloud:spring-cloud-starter-stream-kafka")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-zipkin")
 
     // Binder en memoria para tests: sustituye Kafka sin necesitar broker real
     testImplementation("org.springframework.cloud:spring-cloud-stream-test-binder")

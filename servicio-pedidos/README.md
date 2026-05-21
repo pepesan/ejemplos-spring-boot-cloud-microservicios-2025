@@ -17,6 +17,7 @@ con estado `PENDIENTE` y publica un evento `PedidoCreado` en Kafka (StreamBridge
 | Registro de servicio    | Spring Cloud Netflix Eureka Client               |
 | Configuración externa   | Spring Cloud Config Client                        |
 | Monitorización          | Spring Boot Actuator                              |
+| Tracing distribuido     | `spring-boot-starter-zipkin` (Micrometer Tracing + Brave + Zipkin) |
 | Boilerplate             | Lombok                                            |
 
 ## Puerto
@@ -162,6 +163,67 @@ config-repo/servicio-pedidos/servicio-pedidos.yml
 | `spring.r2dbc.url` | `r2dbc:h2:mem:///pedidosdb` | BD reactiva en memoria |
 | `spring.cloud.stream.bindings.pedidos-creados-out-0.destination` | `pedidos-creados` | Topic Kafka de salida |
 | `resilience4j.circuitbreaker.instances.producto-cb.*` | ver YAML | Circuit breaker config |
+
+## Tracing distribuido
+
+Crear un pedido genera la cadena de trazas más completa del ecosistema. Una sola traza agrupa **5 spans** bajo el mismo `traceId`:
+
+```
+[RAIZ] [servicio-pedidos]  http post /pedidos          (~640 ms)
+  [hijo] [servicio-pedidos]  http get                    (~113 ms)  ← WebClient saliente
+  [hijo] [servicio-productos] http get /productos/{id}   (~2 ms)    ← servidor productos
+  [hijo] [servicio-pedidos]  streambridge process        (~2 ms)    ← preparación Kafka
+  [hijo] [servicio-pedidos]  pedidos-creados-out-0 send  (~11 ms)   ← envío al topic
+```
+
+| Propiedad | Valor | Fuente |
+|---|---|---|
+| `management.tracing.sampling.probability` | `1.0` (100 % en desarrollo) | `config-repo/application.yml` |
+| `management.zipkin.tracing.endpoint` | `http://localhost:9411/api/v2/spans` | `config-repo/application.yml` |
+
+### Cómo ver la traza en Zipkin
+
+La UI usa filtros que se añaden uno a uno con el botón `+`. Sin el filtro por `spanName`, las llamadas al actuator (1 span cada 30 s) tapan la traza importante.
+
+1. Abre http://localhost:9411
+2. Pulsa **`+`** → elige **`serviceName`** → escribe `servicio-pedidos`
+3. Pulsa **`+`** de nuevo → elige **`spanName`** → escribe `http post /pedidos`
+4. Pulsa **Run Query**
+5. Haz click en la entrada que muestre **5 spans**
+
+```bash
+# Genera un pedido para tener una traza reciente
+curl -X POST http://localhost:8084/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}'
+```
+
+### Fixes necesarios en Spring Boot 4 para propagación correcta
+
+Por defecto, en Spring Boot 4 con código reactivo (WebFlux + Reactor), el contexto de traza **no se propaga** a llamadas imperativas (como `StreamBridge.send()`) ni al `WebClient` creado con `@LoadBalanced`. Sin estos dos ajustes, cada operación genera su propio `traceId` y las trazas aparecen fragmentadas en Zipkin.
+
+**Fix 1 — Propagación Reactor → ThreadLocal (`ServicioPedidosApplication.java`)**
+
+```java
+public static void main(String[] args) {
+    Hooks.enableAutomaticContextPropagation();  // ← obligatorio
+    SpringApplication.run(ServicioPedidosApplication.class, args);
+}
+```
+
+Sin esto, `StreamBridge.send()` ejecutado dentro de `doOnSuccess` no ve el span padre del HTTP handler porque Brave usa ThreadLocal y el contexto de Reactor no se traslada automáticamente.
+
+**Fix 2 — ObservationRegistry en el WebClient (`WebClientConfig.java`)**
+
+```java
+@Bean
+@LoadBalanced
+public WebClient.Builder loadBalancedWebClientBuilder(ObservationRegistry observationRegistry) {
+    return WebClient.builder().observationRegistry(observationRegistry);
+}
+```
+
+Sin esto, el `WebClient.Builder` creado manualmente con `@LoadBalanced` no hereda los customizers de tracing que Spring Boot aplica solo al builder auto-configurado. Cada llamada saliente inicia una traza nueva en lugar de continuar la del request entrante.
 
 ## Tests
 
