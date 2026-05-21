@@ -2,6 +2,7 @@ package com.cursosdedesarrollo.eurekaclient;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
  * Microservicio de ejemplo que demuestra el registro automático en Eureka.
@@ -22,6 +23,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * </ul>
  */
 @SpringBootApplication
+@EnableDiscoveryClient
 public class EurekaClientApplication {
 
     public static void main(String[] args) {
