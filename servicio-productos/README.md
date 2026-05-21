@@ -105,7 +105,7 @@ incluye un `docker/compose.yaml` con Kafka y Kafka UI:
 docker compose -f docker/compose.yaml up -d
 ```
 
-Kafka UI estará disponible en `http://localhost:9000`.
+Kafka UI estará disponible en `http://localhost:9001`.
 
 ## Configuración externa
 

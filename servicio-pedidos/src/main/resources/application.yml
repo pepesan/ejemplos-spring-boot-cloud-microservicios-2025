@@ -1,0 +1,15 @@
+spring:
+  application:
+    # Nombre que se registra en Eureka y que el Config Server usa para
+    # buscar el fichero config-repo/servicio-pedidos/servicio-pedidos.yml
+    name: servicio-pedidos
+
+  config:
+    # Importa la configuración desde el Config Server antes de arrancar.
+    # "optional:" evita que el servicio falle si el Config Server no está disponible.
+    import: "optional:configserver:http://localhost:8888"
+
+  sql:
+    init:
+      # Ejecuta schema.sql al arrancar para crear la tabla e insertar datos de ejemplo.
+      mode: always

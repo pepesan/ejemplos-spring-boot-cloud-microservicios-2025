@@ -39,6 +39,7 @@ Las rutas viven en `config-repo/api-gateway/api-gateway.yml` y se cargan desde e
 | `ruta-eureka-client` | `/eureka-client/**` | `lb://eureka-client` | `/**` (sin prefijo) |
 | `ruta-config-client` | `/config-client/**` | `lb://config-client` | `/**` (sin prefijo) |
 | `ruta-servicio-productos` | `/servicio-productos/**` | `lb://servicio-productos` | `/**` (sin prefijo) |
+| `ruta-servicio-pedidos` | `/servicio-pedidos/**` | `lb://servicio-pedidos` | `/**` (sin prefijo) |
 
 ### Cómo funciona una petición
 
@@ -82,6 +83,21 @@ curl -X PUT http://localhost:8090/servicio-productos/productos/1 \
 
 # Eliminar producto (204 si existe, 404 si no)
 curl -X DELETE http://localhost:8090/servicio-productos/productos/1
+
+# --- servicio-pedidos ---
+# Listar pedidos
+curl http://localhost:8090/servicio-pedidos/pedidos
+
+# Crear pedido (publica evento PedidoCreado → stock decrementado en servicio-productos)
+curl -X POST http://localhost:8090/servicio-pedidos/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}'
+
+# Actualizar estado del pedido
+curl -X PATCH "http://localhost:8090/servicio-pedidos/pedidos/1/estado?estado=CONFIRMADO"
+
+# Eliminar pedido
+curl -X DELETE http://localhost:8090/servicio-pedidos/pedidos/1
 ```
 
 ## Añadir una nueva ruta

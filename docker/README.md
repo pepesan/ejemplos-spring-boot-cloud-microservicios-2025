@@ -7,7 +7,7 @@ Infraestructura necesaria para ejecutar el ecosistema de microservicios en local
 | Servicio   | URL                          | Descripción                              |
 |------------|------------------------------|------------------------------------------|
 | Kafka      | `localhost:9092`             | Broker KRaft (sin ZooKeeper) — apache/kafka 4.2.0 |
-| Kafka UI   | http://localhost:9000        | Interfaz web para topics y mensajes      |
+| Kafka UI   | http://localhost:9001        | Interfaz web para topics y mensajes      |
 | Zipkin     | http://localhost:9411        | Trazabilidad distribuida                 |
 
 ## Arrancar y parar
