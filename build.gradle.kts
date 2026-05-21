@@ -38,4 +38,12 @@ subprojects {
     tasks.withType<Test> {
         useJUnitPlatform()
     }
+
+    // Por defecto Gradle ejecuta bootRun con el directorio del submódulo como working directory.
+    // Fijarlo a la raíz del proyecto hace que ${user.dir} en application.yml resuelva siempre
+    // a la raíz, lo que permite referenciar recursos compartidos como config-repo/ desde
+    // cualquier módulo.
+    tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
+        workingDir = rootProject.projectDir
+    }
 }

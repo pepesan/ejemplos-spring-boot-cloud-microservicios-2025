@@ -1,0 +1,75 @@
+# Puerto estándar de Spring Cloud Config Server.
+server:
+  port: 8888
+
+spring:
+  application:
+    # Nombre con el que este servidor se registra en Eureka y aparece en los logs.
+    name: config-server
+
+  profiles:
+    # El backend 'native' lee los ficheros YAML directamente del sistema de ficheros
+    # sin necesitar un repositorio Git. Es la opción más sencilla para desarrollo local
+    # y permite versionar los ficheros de configuración junto con el código fuente en
+    # el mismo repositorio Git del proyecto.
+    #
+    # Alternativa para producción: sustituir 'native' por 'git' y configurar el bloque
+    # spring.cloud.config.server.git (ver comentarios al final del fichero).
+    active: native
+
+  cloud:
+    config:
+      server:
+        native:
+          # Rutas donde el servidor busca los ficheros YAML. Se buscan en orden:
+          #
+          # 1. config-repo/               → contiene application.yml (config compartida)
+          # 2. config-repo/{application}/ → carpeta específica de cada servicio;
+          #                                 {application} se sustituye por el nombre del
+          #                                 servicio que hace la petición (spring.application.name)
+          #
+          # Ejemplo: cuando 'config-client' solicita su configuración, el servidor
+          # busca ficheros en config-repo/ y en config-repo/config-client/.
+          #
+          # ${user.dir} se resuelve al directorio de trabajo del proceso JVM.
+          # Por defecto Gradle lo fijaría al directorio del submódulo (config-server/),
+          # por lo que en build.gradle.kts raíz se configura:
+          #   tasks.withType<BootRun> { workingDir = rootProject.projectDir }
+          # Esto garantiza que ${user.dir} apunte siempre a la raíz del proyecto
+          # independientemente del módulo que se arranque.
+          search-locations:
+            - file://${user.dir}/config-repo
+            - file://${user.dir}/config-repo/{application}
+
+        # --- Configuración alternativa para backend Git (producción) ---
+        # Descomentar este bloque y eliminar el bloque 'native' de arriba para usar
+        # un repositorio Git remoto como fuente de configuración.
+        #
+        # git:
+        #   uri: https://github.com/tu-usuario/config-repo
+        #   default-label: main
+        #   clone-on-start: true
+        #   # Si el repositorio es privado, usar variables de entorno:
+        #   username: ${GIT_USERNAME}
+        #   password: ${GIT_TOKEN}
+
+# El config-server se registra en Eureka para que los clientes puedan localizarlo
+# por nombre en lugar de por URL fija (spring.cloud.config.discovery.enabled=true).
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# --- Actuator ---
+management:
+  endpoints:
+    web:
+      exposure:
+        # Endpoints expuestos en /actuator/*. Por defecto solo 'health' es público.
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      # Muestra el detalle completo en lugar de solo UP/DOWN.
+      show-details: always

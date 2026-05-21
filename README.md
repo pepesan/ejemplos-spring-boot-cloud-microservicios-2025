@@ -23,11 +23,78 @@ Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring C
 ejemplos-spring-boot-cloud-microservicios/
 ├── build.gradle.kts        ← configuración común heredada por todos los módulos
 ├── settings.gradle.kts     ← registro de módulos
+├── config-repo/            ← YAML centralizados, organizados en una subcarpeta por servicio
+├── config-server/          ← servidor centralizado de configuración (Spring Cloud Config)
+├── config-client/          ← cliente del Config Server con perfiles desarrollo/produccion
 ├── eureka-server/          ← servidor de registro y descubrimiento
 └── eureka-client/          ← microservicio cliente que se registra en Eureka
 ```
 
 ## Módulos
+
+### config-server
+
+Servidor centralizado de configuración basado en Spring Cloud Config Server. Lee los YAML del repositorio Git local `config-repo/` y los sirve a los microservicios clientes a través de una API REST.
+
+- **Puerto:** `8888`
+- **Backend:** modo `native` — lee los YAML de `config-repo/` directamente del sistema de ficheros, sin repositorio Git anidado (migrable a Git remoto en producción)
+- **Dependencia clave:** `spring-cloud-config-server`
+
+```bash
+# Consultar la configuración servida para un servicio
+curl http://localhost:8888/eureka-client/default
+curl http://localhost:8888/eureka-client-default.yml
+```
+
+Los clientes se conectan añadiendo en su `application.yml`:
+```yaml
+spring:
+  config:
+    import: "optional:configserver:http://localhost:8888"
+```
+
+### config-client
+
+Microservicio que demuestra cómo un cliente consume configuración centralizada del Config Server con soporte de perfiles. Al arrancar con un perfil concreto, recibe el fichero `config-client-<perfil>.yml` fusionado con la configuración base.
+
+- **Puerto:** `8082` (recibido del Config Server)
+- **Requiere:** `eureka-server` en `localhost:8761` y `config-server` en `localhost:8888`
+
+#### Perfiles disponibles
+
+| Perfil | Fichero en `config-repo/` | `limitePeticiones` | Log level |
+|---|---|---|---|
+| *(ninguno)* | `config-client.yml` | 50 | — |
+| `desarrollo` | `config-client-desarrollo.yml` | 10 | DEBUG |
+| `produccion` | `config-client-produccion.yml` | 5000 | WARN |
+
+#### Arrancar con un perfil
+
+```bash
+# Sin perfil (configuración base)
+./gradlew :config-client:bootRun
+
+# Perfil desarrollo
+./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
+
+# Perfil produccion
+./gradlew :config-client:bootRun --args='--spring.profiles.active=produccion'
+
+# También con variable de entorno
+SPRING_PROFILES_ACTIVE=produccion ./gradlew :config-client:bootRun
+```
+
+#### Verificar la configuración activa
+
+```bash
+# Ver qué configuración está cargada en el servicio arrancado
+curl http://localhost:8082/config
+
+# Consultar directamente en el Config Server (sin arrancar el cliente)
+curl http://localhost:8888/config-client/desarrollo
+curl http://localhost:8888/config-client/produccion
+curl http://localhost:8888/config-client-produccion.yml
+```
 
 ### eureka-server
 
@@ -61,16 +128,23 @@ Microservicio de ejemplo que se registra automáticamente en el servidor Eureka 
 ## Orden de arranque recomendado
 
 ```bash
-# 1. Arrancar primero el registro
+# 1. Arrancar el servidor Eureka
 ./gradlew :eureka-server:bootRun
 
-# 2. Arrancar el cliente (en otra terminal)
+# 2. Arrancar el Config Server (en otra terminal)
+./gradlew :config-server:bootRun
+
+# 3. Arrancar el config-client con el perfil deseado (en otra terminal)
+./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
+
+# 4. Arrancar el eureka-client (en otra terminal)
 ./gradlew :eureka-client:bootRun
 
-# 3. Verificar el registro en el dashboard
+# 5. Verificar el registro en el dashboard de Eureka
 # http://localhost:8761
 
-# 4. Probar los endpoints del cliente
+# 6. Probar los endpoints
+curl http://localhost:8082/config          # configuración activa del config-client
 curl http://localhost:8081/hola
 curl http://localhost:8081/servicios
 curl http://localhost:8081/instancias
@@ -85,14 +159,20 @@ curl http://localhost:8081/instancias
 # Construir un módulo concreto
 ./gradlew :eureka-server:build
 ./gradlew :eureka-client:build
+./gradlew :config-server:build
+./gradlew :config-client:build
 
 # Arrancar un servicio
 ./gradlew :eureka-server:bootRun
+./gradlew :config-server:bootRun
 ./gradlew :eureka-client:bootRun
+./gradlew :config-client:bootRun --args='--spring.profiles.active=desarrollo'
 
 # Ejecutar tests de un módulo
 ./gradlew :eureka-server:test
 ./gradlew :eureka-client:test
+./gradlew :config-server:test
+./gradlew :config-client:test
 
 # Ejecutar una clase de test concreta
 ./gradlew :eureka-client:test --tests "com.cursosdedesarrollo.eurekaclient.EurekaClientApplicationTest"
@@ -112,7 +192,7 @@ Todos los módulos exponen los siguientes endpoints de monitorización bajo `/ac
 | `metrics` | `http://localhost:8761/actuator/metrics` | Métricas de JVM y uso de recursos |
 | `env` | `http://localhost:8761/actuator/env` | Propiedades del entorno activas |
 
-Sustituir el puerto `8761` por el del módulo correspondiente (`8081` para `eureka-client`).
+Sustituir el puerto por el del módulo correspondiente: `8761` (eureka-server), `8888` (config-server), `8081` (eureka-client), `8082` (config-client).
 
 ## Convenciones de los módulos
 

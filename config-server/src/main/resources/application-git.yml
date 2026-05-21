@@ -1,0 +1,65 @@
+# Perfil 'git': sustituye el backend native por un repositorio Git remoto.
+#
+# Activar con argumento:
+#   ./gradlew :config-server:bootRun --args='--spring.profiles.active=git'
+#
+# Activar con variable de entorno:
+#   SPRING_PROFILES_ACTIVE=git ./gradlew :config-server:bootRun
+#
+# Al activar este perfil, Spring Boot carga application.yml + application-git.yml,
+# con este fichero tomando precedencia. El backend native queda desplazado porque
+# el servidor de configuración de Spring Cloud usa el perfil 'native' para activar
+# el backend de sistema de ficheros; al no estar ese perfil activo, usa Git.
+
+spring:
+  cloud:
+    config:
+      server:
+        git:
+          # URL del repositorio Git remoto que contiene los ficheros de configuración.
+          uri: https://github.com/tu-usuario/mi-repositorio-de-configuracion
+
+          # Carpeta(s) DENTRO del repositorio donde están los ficheros YAML.
+          # Útil cuando el repositorio no dedica su raíz a la configuración,
+          # o cuando los ficheros están organizados en subcarpetas por servicio.
+          #
+          # Admite varias formas:
+          #
+          #   Carpeta fija (todos los YAML en un mismo directorio):
+          #     search-paths: config/servicios
+          #
+          #   Carpeta dinámica por nombre de servicio:
+          #     search-paths: "{application}"
+          #     → un servicio llamado 'config-client' buscará en config-client/
+          #     → equivale a la estructura de config-repo/ en este proyecto
+          #
+          #   Varias rutas separadas por comas (busca en todas, en orden):
+          #     search-paths: "., {application}"
+          #     → busca primero en la raíz del repo (application.yml compartido)
+          #       y luego en la subcarpeta del servicio
+          #     → equivale exactamente al search-locations del backend native de este proyecto
+          search-paths: "., {application}"
+
+          # Rama por defecto de la que se leen los ficheros.
+          default-label: main
+
+          # Clona el repositorio al arrancar para detectar errores de acceso o
+          # configuración antes de que algún cliente haga su primera petición.
+          clone-on-start: true
+
+          # Intervalo en segundos para refrescar la caché local del repositorio.
+          # El servidor hace git pull cada vez que un cliente solicita configuración
+          # y han pasado más de este tiempo desde el último pull. 0 = siempre.
+          refresh-rate: 30
+
+          # Credenciales para repositorios privados.
+          # NUNCA escribir los valores directamente aquí; usar variables de entorno.
+          #
+          # Pasar al arrancar:
+          #   GIT_USERNAME=tu-usuario GIT_TOKEN=ghp_xxx \
+          #     SPRING_PROFILES_ACTIVE=git ./gradlew :config-server:bootRun
+          #
+          # En GitHub/GitLab usar un Personal Access Token como contraseña,
+          # no la contraseña de la cuenta.
+          username: ${GIT_USERNAME:}
+          password: ${GIT_TOKEN:}
