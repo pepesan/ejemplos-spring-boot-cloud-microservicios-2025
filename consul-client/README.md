@@ -65,11 +65,9 @@ Al arrancar el servicio:
 curl http://localhost:8085/hola
 curl http://localhost:8085/config
 curl http://localhost:8085/db-config
-curl -H 'Accept: application/json' http://localhost:8085/servicios
-curl -H 'Accept: application/json' http://localhost:8085/instancias
+curl http://localhost:8085/servicios | jq
+curl http://localhost:8085/instancias | jq
 ```
-
-> `/servicios` e `/instancias` devuelven `Flux<String>`. Sin la cabecera `Accept: application/json` el codec de WebFlux emite texto plano sin separadores.
 
 ### CRUD de Tareas (R2DBC)
 
@@ -261,15 +259,11 @@ docker exec consul consul kv put config/consul-client,produccion/data \
     url: "r2dbc:mysql://prod-db:3306/appdb"
     username: "app_user"
     password: "s3cr3t_pr0d"
-    poolSize: 20
-spring:
-  sql:
-    init:
-      mode: never'
+    poolSize: 20'
 ```
 
-> `spring.sql.init.mode: never` desactiva la ejecución de `schema.sql` en producción.
-> La BD de producción debe tener el esquema aplicado mediante migraciones.
+> Liquibase aplica las migraciones en todas las BDs (H2 y MySQL) al arrancar.
+> No hay `schema.sql` — el esquema se gestiona exclusivamente mediante changelogs Liquibase.
 
 ### Arrancar con cada perfil
 
@@ -316,9 +310,6 @@ Respuesta sin perfil (defaults locales si Consul KV no tiene valor):
 spring:
   config:
     import: "optional:consul:"   # activa la carga desde Consul KV
-  sql:
-    init:
-      mode: always               # crea schema.sql al arrancar; sobreescribir a 'never' en produccion
   cloud:
     consul:
       host: localhost
@@ -346,20 +337,13 @@ management:
 
 ---
 
-## Esquema de base de datos
+## Migraciones de base de datos (Liquibase)
 
-El fichero `src/main/resources/schema.sql` se ejecuta al arrancar (`spring.sql.init.mode: always`) y es compatible con H2 y MySQL:
+El esquema se gestiona con **Liquibase** (no con `schema.sql`). El changelog se encuentra en `src/main/resources/db/changelog/db.changelog-master.yaml`.
 
-```sql
-CREATE TABLE IF NOT EXISTS tarea (
-    id          BIGINT       AUTO_INCREMENT PRIMARY KEY,
-    nombre      VARCHAR(255) NOT NULL,
-    descripcion VARCHAR(1024),
-    completada  BOOLEAN      NOT NULL DEFAULT FALSE
-);
-```
+Liquibase requiere JDBC, pero este módulo es WebFlux puro (R2DBC). La clase `LiquibaseConfig` deriva la URL JDBC desde la URL R2DBC de `DatabaseProperties` y crea un `SpringLiquibase` explícito. Al cambiar la URL de BD en Consul KV, Liquibase apunta automáticamente a la nueva BD sin ningún cambio de código.
 
-En el perfil `produccion`, Consul KV debe incluir `spring.sql.init.mode: never` para evitar ejecutar DDL contra la BD de producción (ver sección anterior).
+Las migraciones se ejecutan automáticamente al arrancar. No hay que crear el esquema manualmente.
 
 ---
 
@@ -380,10 +364,10 @@ curl -s http://localhost:8085/config | jq
 curl -s http://localhost:8085/db-config | jq
 
 # Servicios registrados en Consul
-curl -s -H 'Accept: application/json' http://localhost:8085/servicios | jq
+curl -s http://localhost:8085/servicios | jq
 
 # Instancias del propio consul-client
-curl -s -H 'Accept: application/json' http://localhost:8085/instancias | jq
+curl -s http://localhost:8085/instancias | jq
 ```
 
 ### CRUD de tareas
@@ -424,6 +408,7 @@ curl -s -o /dev/null -w "%{http_code}" -X DELETE http://localhost:8085/tareas/1
 Los tests de integración arrancan el contexto completo con `RANDOM_PORT` y usan H2 in-memory.
 Consul (discovery + config) se deshabilita para que los tests sean autónomos.
 
-> **Nota H2 2.x:** la URL de test incluye `CASE_INSENSITIVE_IDENTIFIERS=TRUE` porque
-> Spring Data R2DBC genera columnas entre comillas en mayúsculas (`"NOMBRE"`) y H2 2.x
-> trata los identificadores entre comillas como case-sensitive por defecto.
+> **Nota H2 2.x + Liquibase:** la URL de test incluye `CASE_INSENSITIVE_IDENTIFIERS=TRUE` (Spring Data R2DBC genera
+> columnas entre comillas en mayúsculas y H2 2.x es case-sensitive con comillas). Liquibase usa JDBC internamente
+> con `user=sa`; la URL R2DBC debe incluir `spring.r2dbc.username=sa` (o vía `consulclient.datasource.username`)
+> para que ambas conexiones usen el mismo propietario de BD.

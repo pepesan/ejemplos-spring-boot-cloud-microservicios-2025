@@ -4,11 +4,6 @@ server:
 spring:
   application:
     name: consul-client
-  sql:
-    init:
-      # Crea el esquema al arrancar. En produccion sobreescribir a 'never'
-      # desde Consul KV para no ejecutar DDL contra la BD de produccion.
-      mode: always
   # Activa la carga de configuración desde Consul KV al arrancar.
   # 'optional:' evita que la app falle si Consul no está disponible.
   config:

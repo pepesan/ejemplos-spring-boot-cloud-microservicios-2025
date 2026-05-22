@@ -11,11 +11,11 @@ Este repositorio contiene **dos stacks independientes** que demuestran el mismo 
 | | Eureka | Consul |
 |---|---|---|
 | **Registry** | `eureka-server` (puerto 8761, JVM) | `consul` Docker (puerto 8500, agente externo) |
-| **Módulos implicados** | `eureka-client`, `config-client`, `api-gateway`, `servicio-productos`, `servicio-pedidos`, `admin-server` | `consul-client` |
+| **Módulos implicados** | `eureka-client`, `config-client`, `api-gateway`, `servicio-productos`, `servicio-pedidos`, `admin-server` | `consul-gateway`, `consul-client`, `consul-productos`, `consul-pedidos` |
 | **Configuración centralizada** | `config-server` (backend nativo sobre `config-repo/`) | cada servicio lleva su propio `application.yml` |
 | **Health check** | heartbeat periódico hacia Eureka | HTTP poll de Consul a `/actuator/health` |
 | **UI de registro** | http://localhost:8761 | http://localhost:8500/ui |
-| **Infraestructura Docker adicional** | Kafka, Kafka UI, Zipkin | solo Consul (+ Zipkin opcional para trazas) |
+| **Infraestructura Docker adicional** | Kafka, Kafka UI, Zipkin | Consul + Kafka + Zipkin (consul-pedidos usa Kafka para publicar eventos) |
 
 > El stack Eureka está documentado en [Orden de arranque](#orden-de-arranque).
 > El stack Consul está documentado en [Sistema con Consul — arranque completo](#sistema-con-consul--arranque-completo).
@@ -61,6 +61,9 @@ Este repositorio contiene **dos stacks independientes** que demuestran el mismo 
 | `servicio-pedidos`   | `8084`  | http://localhost:8084     | CRUD reactivo de pedidos + Circuit Breaker + Kafka|
 | `admin-server`       | `9090`  | http://localhost:9090     | Panel Spring Boot Admin (admin / admin)           |
 | `consul-client`      | `8085`  | http://localhost:8085     | Cliente Consul: descubrimiento, config KV por perfil, CRUD Tareas R2DBC |
+| `consul-gateway`     | `8091`  | http://localhost:8091     | API Gateway del stack Consul; rutas definidas en el KV de Consul        |
+| `consul-productos`   | `8086`  | http://localhost:8086     | CRUD reactivo de productos del stack Consul; consumido por consul-pedidos|
+| `consul-pedidos`     | `8087`  | http://localhost:8087     | Pedidos con llamada a consul-productos vía lb:// y Circuit Breaker       |
 
 ---
 
@@ -384,16 +387,19 @@ Sin esto, el `WebClient.Builder` creado manualmente no hereda los filtros de tra
 
 #### Microservicios
 
-| Módulo          | Puerto | URL                   | Descripción                                                                          |
-|-----------------|--------|-----------------------|--------------------------------------------------------------------------------------|
-| `consul-client` | `8085` | http://localhost:8085 | Lee configuración del KV de Consul al arrancar; se registra para descubrimiento     |
+| Módulo             | Puerto | URL                   | Descripción                                                                           |
+|--------------------|--------|-----------------------|---------------------------------------------------------------------------------------|
+| `consul-gateway`   | `8091` | http://localhost:8091 | Punto de entrada único; rutas definidas en Consul KV, balanceo vía `lb://`           |
+| `consul-client`    | `8085` | http://localhost:8085 | Lee configuración del KV de Consul al arrancar; se registra para descubrimiento      |
+| `consul-productos` | `8086` | http://localhost:8086 | CRUD reactivo de productos; proporciona datos a `consul-pedidos`                     |
+| `consul-pedidos`   | `8087` | http://localhost:8087 | Crea pedidos consultando `consul-productos` vía `lb://` + Circuit Breaker            |
 
 ### Paso 1 — Infraestructura Docker
 
-Solo son necesarios Consul y (opcionalmente) Zipkin. Kafka no se usa en este stack.
+Se necesitan Consul, Zipkin y Kafka. Kafka es necesario para la mensajería entre `consul-pedidos` y `consul-productos`.
 
 ```bash
-docker compose -f docker/compose.yaml up -d consul zipkin
+docker compose -f docker/compose.yaml up -d consul zipkin kafka
 ```
 
 Esperar a que Consul esté `healthy`:
@@ -406,26 +412,26 @@ Verificar la UI de Consul: http://localhost:8500/ui
 
 ---
 
-### Paso 2 — Cargar configuración en Consul KV (opcional)
+### Paso 2 — Cargar configuración en Consul KV
 
-Antes de arrancar el microservicio se puede pre-cargar su configuración en el KV store. Si no existe, el servicio arrancará con los valores por defecto.
+Hay que cargar la configuración de los servicios antes de arrancarlos.
 
-La ruta del KV es `config/consul-client/data`. El valor debe ser YAML:
+#### Configuración compartida Zipkin — `config/application/data`
 
-```yaml
-consulclient:
-  mensaje: "Hola desde Consul KV!"
-  limite: 42
-  entorno: "consul"
+Aplica a todos los servicios Consul. **Cargar siempre antes de arrancar cualquier servicio.**
+
+```bash
+docker exec consul consul kv put config/application/data \
+'management:
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans'
 ```
 
-**Vía UI:**
-
-1. Abre http://localhost:8500/ui → **Key/Value**
-2. Crea la clave `config/consul-client/data` y pega el YAML anterior
-3. Guarda
-
-**Vía CLI (Docker):**
+#### consul-client — `config/consul-client/data` (opcional — tiene valores por defecto)
 
 ```bash
 docker exec consul consul kv put config/consul-client/data \
@@ -434,6 +440,96 @@ docker exec consul consul kv put config/consul-client/data \
   limite: 42
   entorno: "consul"'
 ```
+
+Si no se carga, el servicio arrancará con los valores por defecto (`limite: 100`, `mensaje: "configuración local"`).
+
+#### consul-productos — `config/consul-productos/data`
+
+```bash
+docker exec consul consul kv put config/consul-productos/data \
+'spring:
+  r2dbc:
+    url: r2dbc:h2:mem:///productosdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
+    password: ""
+  cloud:
+    function:
+      definition: procesarPedido
+    stream:
+      bindings:
+        procesarPedido-in-0:
+          destination: pedidos-creados
+          group: consul-productos-group
+      kafka:
+        binder:
+          brokers: localhost:9092'
+```
+
+#### consul-pedidos — `config/consul-pedidos/data`
+
+```bash
+docker exec consul consul kv put config/consul-pedidos/data \
+'spring:
+  r2dbc:
+    url: r2dbc:h2:mem:///pedidosdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
+    password: ""
+  cloud:
+    stream:
+      bindings:
+        pedidos-creados-out-0:
+          destination: pedidos-creados
+      source: pedidos-creados-out-0
+      kafka:
+        binder:
+          brokers: localhost:9092'
+```
+
+#### consul-gateway — `config/consul-gateway/data` (obligatorio — sin este paso el gateway no tiene rutas)
+
+Las rutas deben usar el prefijo `spring.cloud.gateway.server.webflux.routes` (Gateway 5.x):
+
+```bash
+docker exec consul consul kv put config/consul-gateway/data \
+'spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: consul-client-route
+              uri: lb://consul-client
+              predicates:
+                - Path=/consul-client/**
+              filters:
+                - StripPrefix=1
+            - id: consul-productos-route
+              uri: lb://consul-productos
+              predicates:
+                - Path=/consul-productos/**
+              filters:
+                - StripPrefix=1
+            - id: consul-pedidos-route
+              uri: lb://consul-pedidos
+              predicates:
+                - Path=/consul-pedidos/**
+              filters:
+                - StripPrefix=1
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans'
+```
+
+**Vía UI de Consul (alternativa para cualquier clave):**
+
+1. Abre http://localhost:8500/ui → **Key/Value**
+2. Crea la clave con el path correspondiente y pega el YAML
+3. Guarda
 
 ---
 
@@ -458,20 +554,87 @@ http://localhost:8500/ui → Services → consul-client → estado: passing
 
 ---
 
-### Verificación de endpoints
+### Paso 4 — consul-gateway `→ :8091`
 
 ```bash
-# Saludo simple
+./gradlew :consul-gateway:bootRun
+```
+
+Al arrancar, el gateway:
+
+1. Lee las rutas de `config/consul-gateway/data` en el KV de Consul.
+2. Se registra con el nombre `consul-gateway`.
+3. El LoadBalancer usa el catálogo de Consul para resolver `lb://consul-*`.
+
+Verificar rutas activas:
+
+```bash
+curl http://localhost:8091/actuator/gateway/routes | jq '.[].route_id'
+```
+
+---
+
+### Paso 5 — consul-productos `→ :8086`
+
+Requiere que `config/consul-productos/data` esté cargado en el KV (ver Paso 2).
+
+```bash
+./gradlew :consul-productos:bootRun
+```
+
+Al arrancar, Liquibase crea la tabla `producto` e inserta 5 productos iniciales. Se registra en Consul y suscribe al topic Kafka `pedidos-creados` para decrementar stock.
+
+```bash
+curl http://localhost:8086/productos | jq
+curl http://localhost:8091/consul-productos/productos | jq   # via gateway
+```
+
+---
+
+### Paso 6 — consul-pedidos `→ :8087`
+
+Requiere que `config/consul-pedidos/data` esté cargado en el KV (ver Paso 2) y Kafka corriendo.
+
+```bash
+./gradlew :consul-pedidos:bootRun
+```
+
+Demuestra comunicación reactiva entre microservicios: llama a `consul-productos` vía `lb://` + Circuit Breaker Resilience4j, publica el evento `PedidoCreadoEvento` en Kafka y propaga trazas Zipkin.
+
+```bash
+# Crear pedido: consul-pedidos llama a consul-productos para calcular el total
+# y publica el evento → consul-productos decrementa el stock vía Kafka
+curl -s -X POST http://localhost:8087/pedidos \
+  -H 'Content-Type: application/json' \
+  -d '{"productoId":1,"cantidad":2}' | jq .
+# → total: 179.98  (89.99 × 2, precio obtenido de consul-productos)
+
+# Via gateway
+curl -s -X POST http://localhost:8091/consul-pedidos/pedidos \
+  -H 'Content-Type: application/json' \
+  -d '{"productoId":1,"cantidad":2}' | jq .
+```
+
+---
+
+### Verificación de endpoints
+
+**Directo al consul-client:**
+
+```bash
 curl http://localhost:8085/hola
-
-# Configuración activa leída desde Consul KV
 curl http://localhost:8085/config
+curl http://localhost:8085/servicios | jq
+```
 
-# Servicios registrados en Consul en este momento
-curl http://localhost:8085/servicios
+**A través del consul-gateway:**
 
-# Instancias del propio consul-client
-curl http://localhost:8085/instancias
+```bash
+curl http://localhost:8091/consul-client/hola
+curl http://localhost:8091/consul-client/config | jq
+curl http://localhost:8091/consul-client/tareas | jq
+curl http://localhost:8091/consul-productos/productos | jq
+curl http://localhost:8091/consul-pedidos/pedidos | jq
 ```
 
 Respuesta esperada de `/config` con el KV cargado en el paso 2:
@@ -568,6 +731,9 @@ Para simular un fallo: detener el servicio y observar cómo Consul lo marca `cri
 ./gradlew :servicio-pedidos:build
 ./gradlew :admin-server:build
 ./gradlew :consul-client:build
+./gradlew :consul-gateway:build
+./gradlew :consul-productos:build
+./gradlew :consul-pedidos:build
 
 # Tests de todos los módulos
 ./gradlew test
@@ -582,6 +748,9 @@ Para simular un fallo: detener el servicio y observar cómo Consul lo marca `cri
 ./gradlew :servicio-pedidos:test
 ./gradlew :admin-server:test
 ./gradlew :consul-client:test
+./gradlew :consul-gateway:test
+./gradlew :consul-productos:test
+./gradlew :consul-pedidos:test
 ```
 
 ---
@@ -610,6 +779,9 @@ Ejemplo: `http://localhost:{puerto}/actuator/health`
 | `servicio-pedidos`   | http://localhost:8084/actuator/health           |
 | `admin-server`       | http://localhost:9090/actuator/health           |
 | `consul-client`      | http://localhost:8085/actuator/health           |
+| `consul-gateway`     | http://localhost:8091/actuator/health           |
+| `consul-productos`   | http://localhost:8086/actuator/health           |
+| `consul-pedidos`     | http://localhost:8087/actuator/health           |
 
 ---
 
@@ -630,7 +802,10 @@ ejemplos-spring-boot-cloud-microservicios/
 ├── servicio-productos/     ← CRUD reactivo + consumidor Kafka PedidoCreado (puerto 8083)
 ├── servicio-pedidos/       ← CRUD reactivo + Circuit Breaker + productor Kafka (puerto 8084)
 ├── admin-server/           ← Spring Boot Admin 4.0.4, monitorización del ecosistema (puerto 9090)
-└── consul-client/          ← cliente Consul: registro y descubrimiento de servicios (puerto 8085)
+├── consul-client/          ← cliente Consul: registro, config KV y CRUD Tareas R2DBC (puerto 8085)
+├── consul-gateway/         ← API Gateway del stack Consul; rutas en Consul KV (puerto 8091)
+├── consul-productos/       ← CRUD reactivo de productos del stack Consul (puerto 8086)
+└── consul-pedidos/         ← pedidos Consul: llama a consul-productos vía lb:// + CB (puerto 8087)
 ```
 
 ---

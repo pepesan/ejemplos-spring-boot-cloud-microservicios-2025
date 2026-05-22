@@ -5,9 +5,9 @@ import org.springframework.cloud.client.discovery.ReactiveDiscoveryClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -29,18 +29,19 @@ public class HolaController {
     }
 
     @GetMapping("/servicios")
-    public Flux<String> serviciosRegistrados() {
-        return discoveryClient.getServices();
+    public Mono<List<String>> serviciosRegistrados() {
+        return discoveryClient.getServices().collectList();
     }
 
     @GetMapping("/instancias/{serviceId}")
-    public Flux<String> instancias(@PathVariable String serviceId) {
+    public Mono<List<String>> instancias(@PathVariable String serviceId) {
         return discoveryClient.getInstances(serviceId)
-                .map(i -> i.getServiceId() + " -> " + i.getUri());
+                .map(i -> i.getServiceId() + " -> " + i.getUri())
+                .collectList();
     }
 
     @GetMapping("/instancias")
-    public Flux<String> instanciasPropio() {
+    public Mono<List<String>> instanciasPropio() {
         return instancias("consul-client");
     }
 

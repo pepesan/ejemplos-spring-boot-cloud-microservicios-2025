@@ -27,9 +27,6 @@ import static org.mockito.Mockito.when;
         "spring.cloud.discovery.enabled=false",
         "spring.cloud.consul.config.enabled=false",
         "spring.config.import=",
-        "spring.sql.init.mode=always",
-        // CASE_INSENSITIVE_IDENTIFIERS: Spring Data R2DBC genera columnas en mayúsculas entre
-        // comillas ("NOMBRE") que H2 2.x trata como case-sensitive sin este flag.
         "consulclient.datasource.url=r2dbc:h2:mem:///testconsuldb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE"
 })
 class ConsulClientApplicationTest {
