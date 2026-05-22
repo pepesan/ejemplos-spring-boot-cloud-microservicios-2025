@@ -1,0 +1,55 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: consul-client
+  sql:
+    init:
+      # Crea el esquema al arrancar. En produccion sobreescribir a 'never'
+      # desde Consul KV para no ejecutar DDL contra la BD de produccion.
+      mode: always
+  # Activa la carga de configuración desde Consul KV al arrancar.
+  # 'optional:' evita que la app falle si Consul no está disponible.
+  config:
+    import: "optional:consul:"
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        # Registra la IP en lugar del hostname del sistema operativo.
+        prefer-ip-address: true
+        # Intervalo del health-check que Consul lanza contra /actuator/health.
+        health-check-interval: 10s
+        # Ruta del health-check expuesta por el Actuator.
+        health-check-path: /actuator/health
+      config:
+        # Formato YAML: el valor del KV es un bloque YAML completo.
+        # Alternativa: KEY_VALUE (pares clave=valor individuales).
+        format: YAML
+        # Clave dentro de la carpeta del servicio donde se almacena el YAML.
+        data-key: data
+        # Carpeta raíz en el KV: config/consul-client/data
+        # Nota: 'prefix' está deprecado; se usa 'prefixes' (lista).
+        prefixes:
+          - config
+        # Activa el watcher: detecta cambios en el KV y refresca los beans
+        # anotados con @RefreshScope sin reiniciar la aplicación.
+        watch:
+          enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,tracing
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans

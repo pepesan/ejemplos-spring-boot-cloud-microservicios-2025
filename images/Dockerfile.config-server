@@ -1,0 +1,8 @@
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+# El config-server usa ${user.dir}/config-repo como backend nativo.
+# WORKDIR=/app → ${user.dir}=/app → config-repo se resuelve en /app/config-repo.
+COPY config-server/build/libs/config-server-1.0-SNAPSHOT.jar app.jar
+COPY config-repo/ config-repo/
+EXPOSE 8888
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

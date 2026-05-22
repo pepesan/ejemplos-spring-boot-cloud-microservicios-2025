@@ -2,6 +2,26 @@
 
 Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring Cloud. Cada módulo ilustra un componente o patrón concreto del ecosistema Spring Cloud.
 
+---
+
+## Dos modos de descubrimiento de servicios
+
+Este repositorio contiene **dos stacks independientes** que demuestran el mismo patrón de descubrimiento con tecnologías distintas. No es necesario levantar ambos a la vez.
+
+| | Eureka | Consul |
+|---|---|---|
+| **Registry** | `eureka-server` (puerto 8761, JVM) | `consul` Docker (puerto 8500, agente externo) |
+| **Módulos implicados** | `eureka-client`, `config-client`, `api-gateway`, `servicio-productos`, `servicio-pedidos`, `admin-server` | `consul-client` |
+| **Configuración centralizada** | `config-server` (backend nativo sobre `config-repo/`) | cada servicio lleva su propio `application.yml` |
+| **Health check** | heartbeat periódico hacia Eureka | HTTP poll de Consul a `/actuator/health` |
+| **UI de registro** | http://localhost:8761 | http://localhost:8500/ui |
+| **Infraestructura Docker adicional** | Kafka, Kafka UI, Zipkin | solo Consul (+ Zipkin opcional para trazas) |
+
+> El stack Eureka está documentado en [Orden de arranque](#orden-de-arranque).
+> El stack Consul está documentado en [Sistema con Consul — arranque completo](#sistema-con-consul--arranque-completo).
+
+---
+
 ## Stack tecnológico
 
 | Tecnología              | Versión                  |
@@ -26,6 +46,7 @@ Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring C
 | Kafka       | `9092`  | —                        | Broker Kafka KRaft (acceso desde host)   |
 | Kafka UI    | `9001`  | http://localhost:9001    | Consola web de topics y mensajes         |
 | Zipkin      | `9411`  | http://localhost:9411    | UI de trazas distribuidas                |
+| Consul      | `8500`  | http://localhost:8500    | Service mesh: registro, KV y UI          |
 
 ### Microservicios
 
@@ -39,6 +60,7 @@ Colección de ejemplos prácticos de microservicios con Spring Boot 4 y Spring C
 | `servicio-productos` | `8083`  | http://localhost:8083     | CRUD reactivo de productos + consumidor Kafka     |
 | `servicio-pedidos`   | `8084`  | http://localhost:8084     | CRUD reactivo de pedidos + Circuit Breaker + Kafka|
 | `admin-server`       | `9090`  | http://localhost:9090     | Panel Spring Boot Admin (admin / admin)           |
+| `consul-client`      | `8085`  | http://localhost:8085     | Cliente Consul: descubrimiento, config KV por perfil, CRUD Tareas R2DBC |
 
 ---
 
@@ -60,7 +82,13 @@ Los servicios deben arrancarse **en este orden exacto**. Cada uno depende de los
 docker compose -f docker/compose.yaml up -d
 ```
 
-Levanta Kafka (9092), Kafka UI (9001) y Zipkin (9411). Esperar a que los contenedores estén `healthy` antes de continuar.
+Levanta Kafka (9092), Kafka UI (9001), Zipkin (9411) y Consul (8500). Esperar a que los contenedores estén `healthy` antes de continuar.
+
+| Servicio  | URL de verificación           |
+|-----------|-------------------------------|
+| Kafka UI  | http://localhost:9001         |
+| Zipkin    | http://localhost:9411         |
+| Consul UI | http://localhost:8500/ui      |
 
 ---
 
@@ -299,9 +327,9 @@ management:
   tracing:
     sampling:
       probability: 1.0   # 100 % en desarrollo; bajar a 0.1 en producción
-  zipkin:
-    tracing:
-      endpoint: http://localhost:9411/api/v2/spans
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans
 ```
 
 ### Notas importantes sobre Spring Boot 4
@@ -341,6 +369,189 @@ Sin esto, el `WebClient.Builder` creado manualmente no hereda los filtros de tra
 
 ---
 
+## Sistema con Consul — arranque completo
+
+> Stack **independiente** del de Eureka. No es necesario tener `eureka-server`, `config-server` ni ningún otro microservicio del stack Eureka activo.
+
+### Componentes involucrados
+
+#### Infraestructura Docker
+
+| Servicio | Puerto | URL                   | Rol                                                       |
+|----------|--------|-----------------------|-----------------------------------------------------------|
+| Consul   | `8500` | http://localhost:8500 | Agente servidor: registry, health-checks, KV, UI          |
+| Zipkin   | `9411` | http://localhost:9411 | Trazas distribuidas (opcional pero recomendado)           |
+
+#### Microservicios
+
+| Módulo          | Puerto | URL                   | Descripción                                                                          |
+|-----------------|--------|-----------------------|--------------------------------------------------------------------------------------|
+| `consul-client` | `8085` | http://localhost:8085 | Lee configuración del KV de Consul al arrancar; se registra para descubrimiento     |
+
+### Paso 1 — Infraestructura Docker
+
+Solo son necesarios Consul y (opcionalmente) Zipkin. Kafka no se usa en este stack.
+
+```bash
+docker compose -f docker/compose.yaml up -d consul zipkin
+```
+
+Esperar a que Consul esté `healthy`:
+
+```bash
+docker compose -f docker/compose.yaml ps consul
+```
+
+Verificar la UI de Consul: http://localhost:8500/ui
+
+---
+
+### Paso 2 — Cargar configuración en Consul KV (opcional)
+
+Antes de arrancar el microservicio se puede pre-cargar su configuración en el KV store. Si no existe, el servicio arrancará con los valores por defecto.
+
+La ruta del KV es `config/consul-client/data`. El valor debe ser YAML:
+
+```yaml
+consulclient:
+  mensaje: "Hola desde Consul KV!"
+  limite: 42
+  entorno: "consul"
+```
+
+**Vía UI:**
+
+1. Abre http://localhost:8500/ui → **Key/Value**
+2. Crea la clave `config/consul-client/data` y pega el YAML anterior
+3. Guarda
+
+**Vía CLI (Docker):**
+
+```bash
+docker exec consul consul kv put config/consul-client/data \
+'consulclient:
+  mensaje: "Hola desde Consul KV!"
+  limite: 42
+  entorno: "consul"'
+```
+
+---
+
+### Paso 3 — consul-client `→ :8085`
+
+```bash
+./gradlew :consul-client:bootRun
+```
+
+Al arrancar, el servicio:
+
+1. Lee la configuración de `config/consul-client/data` en el KV de Consul.
+2. Se registra con el nombre `consul-client` y su IP + puerto.
+3. Declara un health-check HTTP: Consul llama a `/actuator/health` cada 10 s.
+4. Activa un watcher sobre el KV: si cambia el valor, los beans `@RefreshScope` se recargan sin reiniciar.
+
+Verificar el registro en la UI:
+
+```
+http://localhost:8500/ui → Services → consul-client → estado: passing
+```
+
+---
+
+### Verificación de endpoints
+
+```bash
+# Saludo simple
+curl http://localhost:8085/hola
+
+# Configuración activa leída desde Consul KV
+curl http://localhost:8085/config
+
+# Servicios registrados en Consul en este momento
+curl http://localhost:8085/servicios
+
+# Instancias del propio consul-client
+curl http://localhost:8085/instancias
+```
+
+Respuesta esperada de `/config` con el KV cargado en el paso 2:
+
+```json
+{"mensaje":"Hola desde Consul KV!","limite":42,"entorno":"consul"}
+```
+
+Sin KV (valores por defecto):
+
+```json
+{"mensaje":"configuración local (Consul KV no disponible)","limite":100,"entorno":"local"}
+```
+
+Ejemplo de respuesta de `/servicios` con solo `consul-client` registrado:
+
+```json
+["consul","consul-client"]
+```
+
+> `consul` aparece siempre: es el propio agente, que se auto-registra.
+
+---
+
+### Recarga en caliente de configuración
+
+El watcher detecta cambios en el KV. Para probar la recarga sin reiniciar:
+
+```bash
+# 1. Modificar el valor en Consul KV
+docker exec consul consul kv put config/consul-client/data \
+'consulclient:
+  mensaje: "Configuración actualizada en caliente!"
+  limite: 999
+  entorno: "produccion"'
+
+# 2. Sin reiniciar el servicio, llamar al endpoint
+curl http://localhost:8085/config
+# → {"mensaje":"Configuración actualizada en caliente!","limite":999,"entorno":"produccion"}
+```
+
+---
+
+### Qué observar en la UI de Consul
+
+| Pestaña | Qué muestra |
+|---------|-------------|
+| **Services** | Todos los servicios registrados con su estado (`passing` / `critical`) |
+| **Services → consul-client → Health Checks** | Resultado del último poll a `/actuator/health` |
+| **Nodes** | El nodo del agente servidor con sus checks de sistema |
+| **Key/Value → config/consul-client/data** | YAML de configuración activo para este servicio |
+
+---
+
+### Comportamiento del health-check
+
+Consul llama a `http://<ip>:8085/actuator/health` cada 10 s.
+
+| Estado Actuator | Estado en Consul | Efecto                                                  |
+|-----------------|------------------|---------------------------------------------------------|
+| `UP`            | `passing`        | La instancia aparece en las respuestas de descubrimiento |
+| `DOWN`          | `critical`       | La instancia se excluye del descubrimiento              |
+
+Para simular un fallo: detener el servicio y observar cómo Consul lo marca `critical` en la UI pasados ~10 s.
+
+---
+
+### Comparativa rápida con Eureka
+
+| Aspecto | Eureka | Consul |
+|---------|--------|--------|
+| Proceso registry | JVM propia (`eureka-server`) | Agente externo (Docker) |
+| Health check | heartbeat activo del cliente | poll HTTP pasivo desde el servidor |
+| Tiempo de detección de caída | `leaseExpirationDuration` (30 s) | `health-check-interval` (10 s) |
+| KV store | No | Sí (base para config centralizada) |
+| DNS integrado | No | Sí (puerto 8600/udp) |
+| UI | Panel Eureka (/eureka/apps) | UI completa en /ui |
+
+---
+
 ## Comandos Gradle
 
 ```bash
@@ -356,6 +567,7 @@ Sin esto, el `WebClient.Builder` creado manualmente no hereda los filtros de tra
 ./gradlew :servicio-productos:build
 ./gradlew :servicio-pedidos:build
 ./gradlew :admin-server:build
+./gradlew :consul-client:build
 
 # Tests de todos los módulos
 ./gradlew test
@@ -369,6 +581,7 @@ Sin esto, el `WebClient.Builder` creado manualmente no hereda los filtros de tra
 ./gradlew :servicio-productos:test
 ./gradlew :servicio-pedidos:test
 ./gradlew :admin-server:test
+./gradlew :consul-client:test
 ```
 
 ---
@@ -396,6 +609,7 @@ Ejemplo: `http://localhost:{puerto}/actuator/health`
 | `servicio-productos` | http://localhost:8083/actuator/health           |
 | `servicio-pedidos`   | http://localhost:8084/actuator/health           |
 | `admin-server`       | http://localhost:9090/actuator/health           |
+| `consul-client`      | http://localhost:8085/actuator/health           |
 
 ---
 
@@ -407,7 +621,7 @@ ejemplos-spring-boot-cloud-microservicios/
 ├── settings.gradle.kts     ← registro de todos los módulos
 ├── config-repo/            ← YAMLs centralizados por servicio (backend del config-server)
 ├── docker/
-│   └── compose.yaml        ← Kafka KRaft, Kafka UI y Zipkin
+│   └── compose.yaml        ← Kafka KRaft, Kafka UI, Zipkin y Consul
 ├── eureka-server/          ← servidor de registro y descubrimiento (puerto 8761)
 ├── config-server/          ← servidor de configuración centralizada (puerto 8888)
 ├── eureka-client/          ← cliente Eureka de ejemplo (puerto 8081)
@@ -415,7 +629,8 @@ ejemplos-spring-boot-cloud-microservicios/
 ├── api-gateway/            ← punto de entrada único con enrutamiento dinámico (puerto 8090)
 ├── servicio-productos/     ← CRUD reactivo + consumidor Kafka PedidoCreado (puerto 8083)
 ├── servicio-pedidos/       ← CRUD reactivo + Circuit Breaker + productor Kafka (puerto 8084)
-└── admin-server/           ← Spring Boot Admin 4.0.4, monitorización del ecosistema (puerto 9090)
+├── admin-server/           ← Spring Boot Admin 4.0.4, monitorización del ecosistema (puerto 9090)
+└── consul-client/          ← cliente Consul: registro y descubrimiento de servicios (puerto 8085)
 ```
 
 ---
