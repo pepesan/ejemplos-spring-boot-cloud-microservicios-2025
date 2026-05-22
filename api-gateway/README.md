@@ -1,6 +1,8 @@
 # api-gateway
 
-Punto de entrada único al ecosistema de microservicios. Recibe todas las peticiones externas y las enruta al servicio interno correspondiente, resolviendo la instancia destino mediante el registro de Eureka.
+Punto de entrada único al ecosistema de microservicios. 
+Recibe todas las peticiones externas y las enruta al servicio interno correspondiente, 
+resolviendo la instancia destino mediante el registro de Eureka.
 
 ## Stack
 

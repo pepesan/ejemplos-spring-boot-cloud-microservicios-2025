@@ -17,11 +17,13 @@ config-repo/
     └── eureka-server.yml
 ```
 
-Cada microservicio tiene su propia subcarpeta. El servidor busca ficheros en la raíz y en la subcarpeta del servicio que hace la petición.
+Cada microservicio tiene su propia subcarpeta. El servidor busca ficheros en la raíz y 
+en la subcarpeta del servicio que hace la petición.
 
 ## Reglas de resolución y fusión
 
-Cuando un servicio solicita su configuración, el servidor fusiona los ficheros en este orden de **menor a mayor prioridad**:
+Cuando un servicio solicita su configuración, el servidor fusiona los ficheros en este 
+orden de **menor a mayor prioridad**:
 
 ```
 application.yml                  ← base compartida (menor prioridad)
