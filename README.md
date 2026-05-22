@@ -115,36 +115,13 @@ Sirve los YAML de `config-repo/` a todos los clientes.
 ./gradlew :config-server:bootRun
 ```
 
-Verificar:
-```bash
-curl http://localhost:8888/eureka-client/default
-curl http://localhost:8888/servicio-productos/default
-```
+Revisa en el Eureka Server si está visible el Config Server.
+
+
 
 ---
 
-### Paso 3 — eureka-client `→ :8081`
-
-Microservicio cliente de ejemplo registrado en Eureka.
-
-```bash
-./gradlew :eureka-client:bootRun
-```
-
-| Endpoint           | Descripción                                        |
-|--------------------|----------------------------------------------------|
-| `GET /hola`        | Saludo simple                                      |
-| `GET /servicios`   | Servicios registrados en Eureka                    |
-| `GET /instancias`  | Instancias propias con `serviceId` y URI           |
-
-```bash
-curl http://localhost:8081/hola
-curl http://localhost:8081/servicios
-```
-
----
-
-### Paso 4 — config-client `→ :8082`
+### Paso 3 — config-client `→ :8082`
 
 Demuestra el consumo del Config Server con soporte de perfiles.
 
@@ -165,9 +142,34 @@ Demuestra el consumo del Config Server con soporte de perfiles.
 | `desarrollo` | 10                 | DEBUG     |
 | `produccion` | 5000               | WARN      |
 
+Revisa en el Eureka Server si está visible el Config Client.
+
 ```bash
 curl http://localhost:8082/config
 ```
+
+### Paso 4 — eureka-client `→ :8081`
+
+Microservicio cliente de ejemplo registrado en Eureka.
+
+```bash
+./gradlew :eureka-client:bootRun
+```
+
+| Endpoint           | Descripción                                        |
+|--------------------|----------------------------------------------------|
+| `GET /hola`        | Saludo simple                                      |
+| `GET /servicios`   | Servicios registrados en Eureka                    |
+| `GET /instancias`  | Instancias propias con `serviceId` y URI           |
+
+```bash
+curl http://localhost:8081/hola
+curl http://localhost:8081/servicios
+```
+
+Revisa en el Eureka Server si está visible el Eureka Client.
+
+
 
 ---
 
@@ -184,8 +186,6 @@ Las rutas están definidas en `config-repo/api-gateway/api-gateway.yml`. El filt
 ```bash
 curl http://localhost:8090/eureka-client/hola
 curl http://localhost:8090/config-client/config
-curl http://localhost:8090/servicio-productos/productos
-curl http://localhost:8090/servicio-pedidos/pedidos
 ```
 
 ---
@@ -223,35 +223,124 @@ curl http://localhost:8090/servicio-productos/productos
 
 ### Paso 7 — servicio-pedidos `→ :8084`
 
-CRUD reactivo de pedidos. Al crear un pedido: llama a `servicio-productos` vía WebClient (protegido con Circuit Breaker Resilience4j) y publica el evento `PedidoCreado` en Kafka.
+Al crear un pedido ocurren **tres cosas en cadena**:
+
+1. `servicio-pedidos` llama a `servicio-productos` (vía WebClient + Eureka lb://) para obtener el precio y calcular el total.
+2. Guarda el pedido en H2 con el total calculado.
+3. Publica un evento `PedidoCreado` en Kafka → `servicio-productos` lo consume y decrementa el stock.
 
 ```bash
 ./gradlew :servicio-pedidos:bootRun
 ```
 
-| Endpoint                          | Método   | Descripción                              |
-|-----------------------------------|----------|------------------------------------------|
-| `/pedidos`                        | `GET`    | Listar todos los pedidos                 |
-| `/pedidos/{id}`                   | `GET`    | Obtener pedido por ID                    |
-| `/pedidos`                        | `POST`   | Crear pedido (dispara evento Kafka)      |
-| `/pedidos/{id}/estado?estado=X`   | `PATCH`  | Actualizar estado del pedido             |
+#### Flujo completo paso a paso
+
+**1. Ver el stock inicial del producto 1**
 
 ```bash
-# Crear pedido (publica evento → servicio-productos decrementa stock)
-curl -X POST http://localhost:8084/pedidos \
-  -H "Content-Type: application/json" \
-  -d '{"productoId":1,"cantidad":2}'
-
-# Actualizar estado
-curl -X PATCH "http://localhost:8084/pedidos/1/estado?estado=CONFIRMADO"
-
-# Via gateway
-curl -X POST http://localhost:8090/servicio-pedidos/pedidos \
-  -H "Content-Type: application/json" \
-  -d '{"productoId":1,"cantidad":2}'
+curl -s http://localhost:8083/productos/1 | jq '{nombre, precio, stock}'
 ```
 
-El circuit breaker abre si `servicio-productos` no está disponible; el pedido se crea igualmente.
+Respuesta esperada:
+```json
+{ "nombre": "Teclado mecánico", "precio": 89.99, "stock": 50 }
+```
+
+---
+
+**2. Crear un pedido de 2 unidades del producto 1**
+
+```bash
+curl -s -X POST http://localhost:8084/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}' | jq .
+```
+
+Respuesta esperada:
+```json
+{
+  "id": 1,
+  "productoId": 1,
+  "cantidad": 2,
+  "total": 179.98,
+  "estado": "PENDIENTE"
+}
+```
+
+`total: 179.98` confirma que `servicio-pedidos` llamó a `servicio-productos` y obtuvo `precio: 89.99`. Si `total` fuera `null`, significaría que el circuit breaker cortó la llamada (servicio-productos no disponible).
+
+---
+
+**3. Comprobar que el stock bajó (efecto del evento Kafka)**
+
+```bash
+curl -s http://localhost:8083/productos/1 | jq .stock
+```
+
+Respuesta esperada: `48` (era 50, pidió cantidad 2 → `50 - 2 = 48`).
+
+Esto confirma que `servicio-pedidos` publicó el evento `PedidoCreado` en Kafka y `servicio-productos` lo consumió y decrementó el stock.
+
+---
+
+**4. Actualizar el estado del pedido**
+
+```bash
+curl -s -X PATCH "http://localhost:8084/pedidos/1/estado?estado=CONFIRMADO" | jq '{id, estado}'
+```
+
+Respuesta esperada:
+```json
+{ "id": 1, "estado": "CONFIRMADO" }
+```
+
+---
+
+**5. (Opcional) Ver la traza completa en Zipkin**
+
+El `POST /pedidos` genera una traza con **5 spans** que muestran toda la cadena:
+
+```
+[RAIZ] servicio-pedidos    http post /pedidos
+  [hijo] servicio-pedidos    WebClient → GET http://servicio-productos/productos/1
+  [hijo] servicio-productos  http get /productos/1   ← el otro servicio responde
+  [hijo] servicio-pedidos    StreamBridge prepara el mensaje Kafka
+  [hijo] servicio-pedidos    pedidos-creados-out-0 send  ← evento publicado en Kafka
+```
+
+En Zipkin (http://localhost:9411): filtro `serviceName = servicio-pedidos` + `spanName = http post /pedidos` → buscar la fila con **5 spans**.
+
+---
+
+**6. Probar el circuit breaker (opcional)**
+
+Para ver el fallback: detén `servicio-productos` y crea un pedido nuevo:
+
+```bash
+curl -s -X POST http://localhost:8084/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}' | jq '{total, estado}'
+```
+
+Respuesta esperada con circuit breaker abierto:
+```json
+{ "total": null, "estado": "PENDIENTE" }
+```
+
+El pedido se guarda igualmente, pero sin `total` porque `servicio-productos` no respondió.
+
+---
+
+**Via gateway**
+
+Todos los comandos anteriores también funcionan sustituyendo el puerto directo por el gateway:
+
+```bash
+curl -s http://localhost:8090/servicio-productos/productos/1 | jq .
+curl -s -X POST http://localhost:8090/servicio-pedidos/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}' | jq .
+```
 
 ---
 
@@ -264,6 +353,28 @@ Panel Spring Boot Admin. Descubre automáticamente todos los servicios registrad
 ```
 
 Panel: http://localhost:9090 — usuario: `admin` / contraseña: `admin`
+
+Una vez dentro deberías ver:
+
+- **Pantalla "Applications"** — lista de instancias registradas. Con todos los servicios del stack arrancados deben aparecer:
+  - `EUREKA-CLIENT` — UP
+  - `CONFIG-CLIENT` — UP
+  - `API-GATEWAY` — UP
+  - `SERVICIO-PRODUCTOS` — UP
+  - `SERVICIO-PEDIDOS` — UP
+  - El propio `ADMIN-SERVER` también aparece si está registrado en Eureka.
+
+- **Detalle de cada instancia** — al hacer clic en una de ellas puedes explorar:
+  - **Health** — estado detallado de cada indicador (disco, db, ping…)
+  - **Metrics** — contadores JVM, memoria heap/non-heap, GC, threads activos
+  - **Environment** — todas las propiedades de configuración activas (Spring Environment)
+  - **Loggers** — nivel de log de cada paquete, cambiable en caliente sin reiniciar
+  - **Threads** — volcado de threads en tiempo real
+  - **HTTP Traces** — últimas peticiones HTTP recibidas por ese servicio
+
+- **Indicador visual** — el círculo junto a cada servicio es verde (UP), amarillo (degradado) o rojo (DOWN). Si algún servicio no aparece, comprueba que Eureka está arrancado y que el servicio tiene `spring.boot.admin.client.enabled=true` (o que `admin-server` lo descubre vía Eureka).
+
+> **Nota:** admin-server descubre los servicios a través de Eureka, no mediante registro directo. No es necesario añadir el cliente de Spring Boot Admin a cada microservicio; basta con que estén registrados en Eureka.
 
 ---
 

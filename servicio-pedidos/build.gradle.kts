@@ -1,3 +1,7 @@
+springBoot {
+    buildInfo()
+}
+
 dependencies {
     // API reactiva
     implementation("org.springframework.boot:spring-boot-starter-webflux")

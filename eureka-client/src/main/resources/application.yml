@@ -29,6 +29,19 @@ eureka:
     # con el intervalo reducido anterior.
     lease-expiration-duration-in-seconds: 30
 
+    metadata-map:
+      version: "1.0.0"
+      equipo: backend
+      entorno: desarrollo
+      descripcion: "Cliente Eureka de ejemplo"
+
+info:
+  app:
+    nombre: eureka-client
+    descripcion: "Cliente Eureka de ejemplo con endpoints reactivos"
+    version: "1.0.0"
+    equipo: backend
+
 # --- Actuator + Tracing ---
 management:
   endpoints:

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -34,6 +35,9 @@ public class Pedido {
 
     /** Unidades pedidas. */
     private Integer cantidad;
+
+    /** Importe total (precio × cantidad). Null si servicio-productos no está disponible. */
+    private BigDecimal total;
 
     /**
      * Estado del ciclo de vida: PENDIENTE, CONFIRMADO, CANCELADO.

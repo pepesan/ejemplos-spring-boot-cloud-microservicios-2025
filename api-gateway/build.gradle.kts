@@ -1,3 +1,7 @@
+springBoot {
+    buildInfo()
+}
+
 dependencies {
     // En Spring Cloud Gateway 5.x (Oakwood) el starter reactivo fue renombrado.
     // spring-cloud-starter-gateway-server-webflux → gateway reactivo (WebFlux/Netty)

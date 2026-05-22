@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -64,8 +65,10 @@ public class PedidoService {
      */
     public Mono<Pedido> crear(Pedido pedido) {
         return productoClient.findById(pedido.getProductoId())
-                .doOnNext(p -> log.info("Producto encontrado — id={} nombre='{}' stock={}",
-                        p.getId(), p.getNombre(), p.getStock()))
+                .doOnNext(p -> {
+                    log.info("Producto encontrado — id={} nombre='{}' precio={}", p.getId(), p.getNombre(), p.getPrecio());
+                    pedido.setTotal(p.getPrecio().multiply(BigDecimal.valueOf(pedido.getCantidad())));
+                })
                 .switchIfEmpty(Mono.fromRunnable(() ->
                         log.warn("Producto id={} no disponible — pedido se crea en modo offline",
                                 pedido.getProductoId())))
@@ -75,7 +78,7 @@ public class PedidoService {
                     pedido.setFechaCreacion(LocalDateTime.now());
                     return repository.save(pedido);
                 }))
-                .doOnSuccess(saved -> publicarEvento(saved));
+                .doOnSuccess(this::publicarEvento);
     }
 
     public Mono<Pedido> actualizarEstado(Long id, String nuevoEstado) {

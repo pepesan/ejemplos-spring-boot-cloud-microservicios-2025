@@ -136,6 +136,8 @@ class ServicioPedidosApplicationTest {
                     assertThat(p.getId()).isNotNull();
                     assertThat(p.getEstado()).isEqualTo("PENDIENTE");
                     assertThat(p.getFechaCreacion()).isNotNull();
+                    // 89.99 × 3 = 269.97
+                    assertThat(p.getTotal()).isEqualByComparingTo(new BigDecimal("269.97"));
                 });
     }
 
