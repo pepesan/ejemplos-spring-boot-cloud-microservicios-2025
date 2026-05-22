@@ -28,6 +28,7 @@ spring:
           - config
         watch:
           enabled: true
+          wait-time: 8
     stream:
       bindings:
         procesarPedido-in-0:

@@ -33,6 +33,7 @@ spring:
         # anotados con @RefreshScope sin reiniciar la aplicación.
         watch:
           enabled: true
+          wait-time: 8
 
 management:
   endpoints:

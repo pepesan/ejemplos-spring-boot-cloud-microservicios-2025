@@ -23,6 +23,7 @@ spring:
           - config
         watch:
           enabled: true
+          wait-time: 8
 
 management:
   endpoints:
