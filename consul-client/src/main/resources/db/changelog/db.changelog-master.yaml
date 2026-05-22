@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-create-tarea
+      author: consul-client
+      changes:
+        - createTable:
+            tableName: tarea
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nombre
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: descripcion
+                  type: VARCHAR(1024)
+              - column:
+                  name: completada
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false

@@ -1,0 +1,45 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: consul-pedidos
+  config:
+    import: "optional:consul:"
+  # Valores por defecto — sobreescritos por config/consul-pedidos/data en Consul KV cuando está disponible
+  r2dbc:
+    url: r2dbc:h2:mem:///pedidosdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
+    password: ""
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        prefer-ip-address: true
+        health-check-interval: 10s
+        health-check-path: /actuator/health
+      config:
+        format: YAML
+        data-key: data
+        prefixes:
+          - config
+        watch:
+          enabled: true
+    stream:
+      bindings:
+        pedidos-creados-out-0:
+          destination: pedidos-creados
+      source: pedidos-creados-out-0
+      kafka:
+        binder:
+          brokers: localhost:9092
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always

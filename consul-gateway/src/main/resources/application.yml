@@ -1,0 +1,42 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: consul-gateway
+  config:
+    # Las rutas y la config general se leen del KV store de Consul.
+    # 'optional:' permite arrancar sin Consul (útil en desarrollo aislado).
+    import: "optional:consul:"
+  cloud:
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        prefer-ip-address: true
+        health-check-interval: 10s
+        health-check-path: /actuator/health
+      config:
+        format: YAML
+        data-key: data
+        prefixes:
+          - config
+        watch:
+          enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,gateway,refresh
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+    export:
+      zipkin:
+        endpoint: http://localhost:9411/api/v2/spans

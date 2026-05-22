@@ -1,0 +1,114 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-create-producto
+      author: consul-productos
+      changes:
+        - createTable:
+            tableName: producto
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nombre
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: descripcion
+                  type: VARCHAR(1000)
+              - column:
+                  name: precio
+                  type: DECIMAL(10, 2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: stock
+                  type: INT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 2-insert-productos-iniciales
+      author: consul-productos
+      changes:
+        - insert:
+            tableName: producto
+            columns:
+              - column:
+                  name: nombre
+                  value: "Teclado mecánico"
+              - column:
+                  name: descripcion
+                  value: "Teclado TKL con switches Cherry MX Red"
+              - column:
+                  name: precio
+                  valueNumeric: 89.99
+              - column:
+                  name: stock
+                  valueNumeric: 50
+        - insert:
+            tableName: producto
+            columns:
+              - column:
+                  name: nombre
+                  value: "Ratón gaming"
+              - column:
+                  name: descripcion
+                  value: "Sensor óptico 16000 DPI, 6 botones programables"
+              - column:
+                  name: precio
+                  valueNumeric: 49.99
+              - column:
+                  name: stock
+                  valueNumeric: 120
+        - insert:
+            tableName: producto
+            columns:
+              - column:
+                  name: nombre
+                  value: "Monitor 27\""
+              - column:
+                  name: descripcion
+                  value: "IPS 2K 165 Hz, 1 ms GTG, FreeSync Premium"
+              - column:
+                  name: precio
+                  valueNumeric: 349.00
+              - column:
+                  name: stock
+                  valueNumeric: 15
+        - insert:
+            tableName: producto
+            columns:
+              - column:
+                  name: nombre
+                  value: "Auriculares USB"
+              - column:
+                  name: descripcion
+                  value: "Sonido 7.1 virtual, micrófono retráctil"
+              - column:
+                  name: precio
+                  valueNumeric: 79.99
+              - column:
+                  name: stock
+                  valueNumeric: 30
+        - insert:
+            tableName: producto
+            columns:
+              - column:
+                  name: nombre
+                  value: "Alfombrilla XL"
+              - column:
+                  name: descripcion
+                  value: "Base de tela 90 x 40 cm, base antideslizante"
+              - column:
+                  name: precio
+                  valueNumeric: 19.99
+              - column:
+                  name: stock
+                  valueNumeric: 200

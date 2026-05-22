@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1-create-pedido
+      author: consul-pedidos
+      changes:
+        - createTable:
+            tableName: pedido
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: producto_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: cantidad
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total
+                  type: DECIMAL(10, 2)
+              - column:
+                  name: estado
+                  type: VARCHAR(50)
+                  defaultValue: "PENDIENTE"
+                  constraints:
+                    nullable: false

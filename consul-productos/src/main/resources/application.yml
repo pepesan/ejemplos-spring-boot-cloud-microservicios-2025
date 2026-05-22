@@ -1,0 +1,47 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: consul-productos
+  config:
+    import: "optional:consul:"
+  # Valores por defecto — sobreescritos por config/consul-productos/data en Consul KV cuando está disponible
+  r2dbc:
+    url: r2dbc:h2:mem:///productosdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;CASE_INSENSITIVE_IDENTIFIERS=TRUE
+    username: sa
+    password: ""
+  cloud:
+    function:
+      definition: procesarPedido
+    consul:
+      host: localhost
+      port: 8500
+      discovery:
+        prefer-ip-address: true
+        health-check-interval: 10s
+        health-check-path: /actuator/health
+      config:
+        format: YAML
+        data-key: data
+        prefixes:
+          - config
+        watch:
+          enabled: true
+    stream:
+      bindings:
+        procesarPedido-in-0:
+          destination: pedidos-creados
+          group: consul-productos-group
+      kafka:
+        binder:
+          brokers: localhost:9092
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env
+  endpoint:
+    health:
+      show-details: always
