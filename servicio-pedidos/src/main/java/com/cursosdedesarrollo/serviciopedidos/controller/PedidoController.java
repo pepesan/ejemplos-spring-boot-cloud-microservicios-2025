@@ -1,5 +1,6 @@
 package com.cursosdedesarrollo.serviciopedidos.controller;
 
+import com.cursosdedesarrollo.serviciopedidos.client.ProductoInfo;
 import com.cursosdedesarrollo.serviciopedidos.domain.Pedido;
 import com.cursosdedesarrollo.serviciopedidos.service.PedidoService;
 import lombok.RequiredArgsConstructor;
@@ -46,15 +47,33 @@ public class PedidoController {
     }
 
     /**
-     * Crea un pedido nuevo.
+     * Crea un pedido en <strong>modo estricto</strong>.
      *
-     * <p>Internamente: consulta el producto con circuit breaker, guarda el pedido
-     * con estado PENDIENTE y publica el evento {@code PedidoCreado} en Kafka.
+     * <p>Si {@code servicio-productos} no responde o el circuit breaker está abierto,
+     * devuelve {@code 503 Service Unavailable} y el pedido NO se persiste.
+     * Garantiza que todos los pedidos almacenados tienen {@code total} calculado.
+     *
+     * <p>Úsalo cuando la integridad del dato sea prioritaria sobre la disponibilidad.
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Mono<Pedido> crear(@RequestBody Pedido pedido) {
         return service.crear(pedido);
+    }
+
+    /**
+     * Crea un pedido en <strong>modo resiliente</strong> (degradación graceful).
+     *
+     * <p>Si {@code servicio-productos} no responde o el circuit breaker está abierto,
+     * el pedido se persiste igualmente con {@code total = null} y se publica el evento
+     * Kafka. Cuando el servicio se recupere, el stock se decrementará por consistencia eventual.
+     *
+     * <p>Úsalo cuando la disponibilidad sea prioritaria sobre la integridad inmediata del dato.
+     */
+    @PostMapping("/resiliente")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Mono<Pedido> crearResiliente(@RequestBody Pedido pedido) {
+        return service.crearResiliente(pedido);
     }
 
     /**
@@ -78,5 +97,39 @@ public class PedidoController {
                 .<ResponseEntity<Void>>flatMap(p -> service.deleteById(id)
                         .then(Mono.just(ResponseEntity.<Void>noContent().build())))
                 .switchIfEmpty(Mono.just(notFound));
+    }
+
+    /**
+     * Consulta un producto en {@code servicio-productos} desde este servicio usando
+     * {@link org.springframework.web.client.RestClient} (bloqueante, Spring 6+).
+     *
+     * <p>Demuestra cómo integrar una llamada HTTP bloqueante en un pipeline reactivo:
+     * la llamada se delega a {@code Schedulers.boundedElastic()} para no bloquear Netty.
+     *
+     * @param id id del producto a consultar
+     * @return información del producto (200) o 404 si no existe o el servicio no responde
+     */
+    @GetMapping("/demo/producto/{id}/restclient")
+    public Mono<ResponseEntity<ProductoInfo>> findProductoRestClient(@PathVariable Long id) {
+        return service.findProductoByIdRestClient(id)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Consulta un producto en {@code servicio-productos} desde este servicio usando
+     * {@link org.springframework.web.client.RestTemplate} (bloqueante, clásico Spring).
+     *
+     * <p>Mismo patrón de integración reactiva que el endpoint {@code restclient},
+     * pero ilustra la API de {@code RestTemplate}, más antigua y aún ampliamente usada.
+     *
+     * @param id id del producto a consultar
+     * @return información del producto (200) o 404 si no existe o el servicio no responde
+     */
+    @GetMapping("/demo/producto/{id}/resttemplate")
+    public Mono<ResponseEntity<ProductoInfo>> findProductoRestTemplate(@PathVariable Long id) {
+        return service.findProductoByIdRestTemplate(id)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 }

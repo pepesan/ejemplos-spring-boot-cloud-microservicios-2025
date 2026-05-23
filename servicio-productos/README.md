@@ -4,6 +4,32 @@ Microservicio reactivo de gestión de catálogo de productos. Expone un CRUD com
 mediante Spring WebFlux + R2DBC (H2 en memoria) y consume eventos Kafka de tipo
 `PedidoCreado` publicados por `servicio-pedidos` para decrementar el stock.
 
+## Arranque rápido
+
+### Dependencias previas
+
+| Servicio        | Puerto | Obligatorio |
+|-----------------|--------|-------------|
+| `eureka-server` | 8761   | Sí          |
+| `config-server` | 8888   | Sí          |
+| Kafka (Docker)  | 9092   | Sí (para consumir eventos de stock) |
+
+```bash
+# 1. Infraestructura Docker (Kafka + Kafka UI + Zipkin)
+docker compose -f docker/compose.yaml up -d
+
+# 2. Arranca en orden
+./gradlew :eureka-server:bootRun
+./gradlew :config-server:bootRun
+
+# 3. Arranca este servicio
+./gradlew :servicio-productos:bootRun
+```
+
+Verificar que está registrado: http://localhost:8761 → debe aparecer `SERVICIO-PRODUCTOS`.
+
+---
+
 ## Stack
 
 | Componente            | Tecnología                                    |
@@ -189,14 +215,3 @@ Eureka y el Config Server también se deshabilitan durante los tests mediante
 | `procesarPedido_debeDecrementarStock`      | Evento Kafka decrementa el stock correctamente      |
 | `decrementarStock_noBajaDeZero`            | El stock nunca es negativo aunque la cantidad supere el stock |
 
-## Arranque
-
-Requiere que estén arrancados previamente:
-
-1. `eureka-server` (puerto 8761)
-2. `config-server` (puerto 8888)
-3. Kafka (puerto 9092) — vía `docker compose -f docker/compose.yaml up -d`
-
-```bash
-./gradlew :servicio-productos:bootRun
-```

@@ -223,11 +223,23 @@ curl http://localhost:8090/servicio-productos/productos
 
 ### Paso 7 — servicio-pedidos `→ :8084`
 
+Expone **dos patrones de circuit breaker** con WebClient reactivo para ilustrar los dos
+enfoques ante un fallo del servicio dependiente:
+
+| Endpoint | Patrón | Comportamiento si CB abierto |
+|---|---|---|
+| `POST /pedidos` | Modo estricto | 503 — pedido NO se crea |
+| `POST /pedidos/resiliente` | Degradación graceful | 201 — pedido con `total=null`, Kafka garantiza consistencia eventual |
+
 Al crear un pedido ocurren **tres cosas en cadena**:
 
 1. `servicio-pedidos` llama a `servicio-productos` (vía WebClient + Eureka lb://) para obtener el precio y calcular el total.
-2. Guarda el pedido en H2 con el total calculado.
+2. Guarda el pedido en H2 con el total calculado (o rechaza con 503 en modo estricto si el servicio no responde).
 3. Publica un evento `PedidoCreado` en Kafka → `servicio-productos` lo consume y decrementa el stock.
+
+Incluye además dos endpoints de demostración que muestran cómo usar clientes HTTP bloqueantes
+(`RestClient` y `RestTemplate`) dentro de un pipeline reactivo WebFlux, usando
+`Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())` para no bloquear el event loop de Netty.
 
 ```bash
 ./gradlew :servicio-pedidos:bootRun
@@ -256,7 +268,18 @@ curl -s -X POST http://localhost:8084/pedidos \
   -d '{"productoId":1,"cantidad":2}' | jq .
 ```
 
-Respuesta esperada:
+Respuesta esperada si el servicio productos está caido o todavía no está disponible:
+```json
+{
+  "timestamp": "2026-05-23T10:00:30.176Z",
+  "path": "/pedidos",
+  "status": 503,
+  "error": "Service Unavailable",
+  "requestId": "634f08c6-1"
+}
+```
+
+Respuesta esperada si el servicio productos está disponible:
 ```json
 {
   "id": 1,
@@ -267,7 +290,7 @@ Respuesta esperada:
 }
 ```
 
-`total: 179.98` confirma que `servicio-pedidos` llamó a `servicio-productos` y obtuvo `precio: 89.99`. Si `total` fuera `null`, significaría que el circuit breaker cortó la llamada (servicio-productos no disponible).
+`total: 179.98` confirma que `servicio-pedidos` llamó a `servicio-productos` y obtuvo `precio: 89.99`.
 
 ---
 
@@ -296,6 +319,41 @@ Respuesta esperada:
 
 ---
 
+**4b. (Opcional) Consultar producto desde pedidos — clientes HTTP bloqueantes**
+
+Estos endpoints demuestran cómo integrar `RestClient` y `RestTemplate` (ambos bloqueantes)
+dentro del pipeline reactivo WebFlux mediante `Mono.fromCallable + Schedulers.boundedElastic()`.
+
+```bash
+# Con RestClient (Spring 6+ — API fluent moderna)
+# -o >(jq .) envía el body a jq; -w imprime el código HTTP sin mezclarse con el JSON
+curl -s -o >(jq . 2>/dev/null) -w "HTTP: %{http_code}\n" http://localhost:8084/pedidos/demo/producto/1/restclient
+
+# Con RestTemplate (clásico — disponible desde Spring 3)
+curl -s -o >(jq . 2>/dev/null) -w "HTTP: %{http_code}\n" http://localhost:8084/pedidos/demo/producto/1/resttemplate
+```
+
+Con `servicio-productos` arrancado:
+```
+{ "id": 1, "nombre": "Teclado mecánico", "precio": 89.99, "stock": 48 }
+HTTP: 200
+```
+Sin `servicio-productos` (circuit breaker abierto → body vacío, jq no imprime nada):
+```
+HTTP: 404
+```
+
+Los tres clientes — WebClient reactivo, RestClient y RestTemplate — comparten el mismo circuit
+breaker `producto-cb` de Resilience4j.
+
+```bash
+# Vía gateway
+curl -s -o >(jq . 2>/dev/null) -w "HTTP: %{http_code}\n" http://localhost:8090/servicio-pedidos/pedidos/demo/producto/1/restclient
+curl -s -o >(jq . 2>/dev/null) -w "HTTP: %{http_code}\n" http://localhost:8090/servicio-pedidos/pedidos/demo/producto/1/resttemplate
+```
+
+---
+
 **5. (Opcional) Ver la traza completa en Zipkin**
 
 El `POST /pedidos` genera una traza con **5 spans** que muestran toda la cadena:
@@ -319,15 +377,44 @@ Para ver el fallback: detén `servicio-productos` y crea un pedido nuevo:
 ```bash
 curl -s -X POST http://localhost:8084/pedidos \
   -H "Content-Type: application/json" \
-  -d '{"productoId":1,"cantidad":2}' | jq '{total, estado}'
+  -d '{"productoId":1,"cantidad":2}'
 ```
 
-Respuesta esperada con circuit breaker abierto:
+Respuesta esperada con circuit breaker abierto (`503 Service Unavailable`):
 ```json
-{ "total": null, "estado": "PENDIENTE" }
+{
+  "timestamp": "2026-05-23T10:13:29.011Z",
+  "path": "/pedidos",
+  "status": 503,
+  "error": "Service Unavailable",
+  "requestId": "b615dde3-40"
+}
 ```
+> Spring WebFlux (`DefaultErrorAttributes`) no incluye el campo `message` en la respuesta de error por defecto.
+> Para verlo añadir `server.error.include-message: always` en `application.yml`.
 
-El pedido se guarda igualmente, pero sin `total` porque `servicio-productos` no respondió.
+El pedido **no se crea**. Una vez que el CB pase a `HALF_OPEN` (tras ~10 s) y
+`servicio-productos` responda, el circuito vuelve a `CLOSED` y los pedidos se aceptan.
+
+---
+
+**4c. Probar el modo resiliente**
+
+```bash
+# Modo resiliente: el pedido se crea aunque el CB esté abierto (total=null si no responde)
+curl -s -X POST http://localhost:8084/pedidos/resiliente \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}' | jq '{total, estado}'
+# Con servicio-productos UP  → {"total": 179.98, "estado": "PENDIENTE"}
+# Con servicio-productos DOWN → {"total": null,   "estado": "PENDIENTE"}
+
+# Comparación directa: modo estricto con CB abierto
+# (detén servicio-productos primero y espera ~30s a que el CB se abra)
+curl -s -X POST http://localhost:8084/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}'
+# → 503 Service Unavailable — pedido NO se crea
+```
 
 ---
 
@@ -338,6 +425,9 @@ Todos los comandos anteriores también funcionan sustituyendo el puerto directo 
 ```bash
 curl -s http://localhost:8090/servicio-productos/productos/1 | jq .
 curl -s -X POST http://localhost:8090/servicio-pedidos/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"productoId":1,"cantidad":2}' | jq .
+curl -s -X POST http://localhost:8090/servicio-pedidos/pedidos/resiliente \
   -H "Content-Type: application/json" \
   -d '{"productoId":1,"cantidad":2}' | jq .
 ```

@@ -1,6 +1,8 @@
 package com.cursosdedesarrollo.serviciopedidos;
 
 import com.cursosdedesarrollo.serviciopedidos.client.ProductoClient;
+import com.cursosdedesarrollo.serviciopedidos.client.ProductoClientRestClient;
+import com.cursosdedesarrollo.serviciopedidos.client.ProductoClientRestTemplate;
 import com.cursosdedesarrollo.serviciopedidos.client.ProductoInfo;
 import com.cursosdedesarrollo.serviciopedidos.domain.Pedido;
 import com.cursosdedesarrollo.serviciopedidos.messaging.PedidoCreadoEvento;
@@ -22,6 +24,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -68,10 +71,16 @@ class ServicioPedidosApplicationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // ProductoClient sustituido por mock para no necesitar servicio-productos arrancado.
-    // @MockitoBean es la alternativa a @MockBean en Spring Framework 7.x / Spring Boot 4.x.
+    // Los tres clientes HTTP se sustituyen por mocks para aislar el test de servicio-productos.
+    // @MockitoBean es el reemplazo de @MockBean en Spring Framework 7.x / Spring Boot 4.x.
     @MockitoBean
     private ProductoClient productoClient;
+
+    @MockitoBean
+    private ProductoClientRestClient productoClientRestClient;
+
+    @MockitoBean
+    private ProductoClientRestTemplate productoClientRestTemplate;
 
     @BeforeEach
     void setup() {
@@ -79,9 +88,11 @@ class ServicioPedidosApplicationTest {
                 .baseUrl("http://localhost:" + port)
                 .build();
 
-        // Por defecto el mock devuelve un producto válido
+        // Por defecto los tres mocks devuelven un producto válido
         ProductoInfo producto = new ProductoInfo(1L, "Teclado mecánico", new BigDecimal("89.99"), 50);
         when(productoClient.findById(anyLong())).thenReturn(Mono.just(producto));
+        when(productoClientRestClient.findById(anyLong())).thenReturn(Optional.of(producto));
+        when(productoClientRestTemplate.findById(anyLong())).thenReturn(Optional.of(producto));
     }
 
     @Test
@@ -170,7 +181,7 @@ class ServicioPedidosApplicationTest {
     }
 
     @Test
-    void crear_conProductoNoDisponible_debeCrearIgualmente() {
+    void crear_conProductoNoDisponible_debeRetornar503() {
         // Simula el circuit breaker abierto: el cliente devuelve vacío
         when(productoClient.findById(99L)).thenReturn(Mono.empty());
 
@@ -184,10 +195,8 @@ class ServicioPedidosApplicationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(nuevo)
                 .exchange()
-                // El pedido se crea aunque el servicio de productos no esté disponible
-                .expectStatus().isCreated()
-                .expectBody(Pedido.class)
-                .value(p -> assertThat(p.getEstado()).isEqualTo("PENDIENTE"));
+                // El pedido se rechaza con 503 cuando servicio-productos no está disponible
+                .expectStatus().isEqualTo(503);
     }
 
     @Test
@@ -230,6 +239,108 @@ class ServicioPedidosApplicationTest {
     void deleteById_conIdInexistente_debeRetornar404() {
         webTestClient.delete()
                 .uri("/pedidos/9999")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    // ── Modo resiliente (degradación graceful) ───────────────────────────────
+
+    @Test
+    void crearResiliente_conProductoDisponible_debeCalcularTotalYRetornar201() {
+        Pedido nuevo = Pedido.builder()
+                .productoId(1L)
+                .cantidad(3)
+                .build();
+
+        webTestClient.post()
+                .uri("/pedidos/resiliente")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(nuevo)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(Pedido.class)
+                .value(p -> {
+                    assertThat(p.getId()).isNotNull();
+                    assertThat(p.getEstado()).isEqualTo("PENDIENTE");
+                    // 89.99 × 3 = 269.97 — total calculado porque el servicio respondió
+                    assertThat(p.getTotal()).isEqualByComparingTo(new BigDecimal("269.97"));
+                });
+    }
+
+    @Test
+    void crearResiliente_conProductoNoDisponible_debeCrearConTotalNullYRetornar201() {
+        // Simula circuit breaker abierto: el cliente devuelve vacío
+        when(productoClient.findById(99L)).thenReturn(Mono.empty());
+
+        Pedido nuevo = Pedido.builder()
+                .productoId(99L)
+                .cantidad(1)
+                .build();
+
+        webTestClient.post()
+                .uri("/pedidos/resiliente")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(nuevo)
+                .exchange()
+                // El pedido se crea igualmente aunque el servicio no esté disponible
+                .expectStatus().isCreated()
+                .expectBody(Pedido.class)
+                .value(p -> {
+                    assertThat(p.getId()).isNotNull();
+                    assertThat(p.getEstado()).isEqualTo("PENDIENTE");
+                    // total es null porque no se pudo consultar el precio
+                    assertThat(p.getTotal()).isNull();
+                });
+    }
+
+    // ── Clientes bloqueantes: RestClient ──────────────────────────────────────
+
+    @Test
+    void findProductoRestClient_conIdExistente_debeRetornar200ConDatosDelProducto() {
+        webTestClient.get()
+                .uri("/pedidos/demo/producto/1/restclient")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(ProductoInfo.class)
+                .value(p -> {
+                    assertThat(p.getId()).isEqualTo(1L);
+                    assertThat(p.getNombre()).isEqualTo("Teclado mecánico");
+                    assertThat(p.getPrecio()).isEqualByComparingTo(new BigDecimal("89.99"));
+                });
+    }
+
+    @Test
+    void findProductoRestClient_conServicioNoDisponible_debeRetornar404() {
+        when(productoClientRestClient.findById(99L)).thenReturn(Optional.empty());
+
+        webTestClient.get()
+                .uri("/pedidos/demo/producto/99/restclient")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    // ── Clientes bloqueantes: RestTemplate ───────────────────────────────────
+
+    @Test
+    void findProductoRestTemplate_conIdExistente_debeRetornar200ConDatosDelProducto() {
+        webTestClient.get()
+                .uri("/pedidos/demo/producto/1/resttemplate")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(ProductoInfo.class)
+                .value(p -> {
+                    assertThat(p.getId()).isEqualTo(1L);
+                    assertThat(p.getNombre()).isEqualTo("Teclado mecánico");
+                    assertThat(p.getPrecio()).isEqualByComparingTo(new BigDecimal("89.99"));
+                });
+    }
+
+    @Test
+    void findProductoRestTemplate_conServicioNoDisponible_debeRetornar404() {
+        when(productoClientRestTemplate.findById(99L)).thenReturn(Optional.empty());
+
+        webTestClient.get()
+                .uri("/pedidos/demo/producto/99/resttemplate")
                 .exchange()
                 .expectStatus().isNotFound();
     }

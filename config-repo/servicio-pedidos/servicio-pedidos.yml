@@ -28,16 +28,6 @@ spring:
           # Dirección del broker Kafka arrancado con docker/compose.yaml.
           brokers: localhost:9092
 
-eureka:
-  client:
-    service-url:
-      # URL del servidor Eureka donde se registra este servicio.
-      defaultZone: http://localhost:8761/eureka/
-  instance:
-    # Prefiere IP en lugar de hostname para evitar problemas de resolución DNS
-    # en entornos Docker o donde el hostname no sea accesible entre contenedores.
-    prefer-ip-address: true
-
 # Configuración del Circuit Breaker Resilience4j para la llamada a servicio-productos.
 # Los umbrales son permisivos para entornos de desarrollo con pocos servicios arrancados.
 resilience4j:
@@ -59,6 +49,17 @@ resilience4j:
           - java.util.concurrent.TimeoutException
           - org.springframework.web.reactive.function.client.WebClientResponseException.ServiceUnavailable
 
+
+eureka:
+  client:
+    service-url:
+      # URL del servidor Eureka donde se registra este servicio.
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    # Prefiere IP en lugar de hostname para evitar problemas de resolución DNS
+    # en entornos Docker o donde el hostname no sea accesible entre contenedores.
+    prefer-ip-address: true
+
 management:
   endpoints:
     web:
@@ -67,7 +68,6 @@ management:
   endpoint:
     health:
       show-details: always
-  # Expone las métricas de Resilience4j en el actuator de health
-  health:
-    circuitbreakers:
-      enabled: true
+  # NOTA: management.health.circuitbreakers.enabled no funciona con Spring Boot 4 +
+  # Resilience4j 2.3.0 (incompatibilidad en la API de health). El estado del CB se
+  # consulta en /actuator/circuitbreakers, que sí está expuesto y funciona correctamente.
