@@ -18,14 +18,20 @@ Por defecto el servidor usa el backend **`native`**, que lee los YAML directamen
 ```
 config-repo/
 ├── application.yml                        ← config compartida por TODOS los servicios
+├── api-gateway/
+│   └── api-gateway.yml
 ├── config-client/
 │   ├── config-client.yml                  ← config base del config-client
 │   ├── config-client-desarrollo.yml       ← config del config-client en desarrollo
 │   └── config-client-produccion.yml       ← config del config-client en producción
 ├── eureka-client/
 │   └── eureka-client.yml
-└── eureka-server/
-    └── eureka-server.yml
+├── eureka-server/
+│   └── eureka-server.yml
+├── servicio-pedidos/
+│   └── servicio-pedidos.yml
+└── servicio-productos/
+    └── servicio-productos.yml
 ```
 
 Cada servicio tiene su propia subcarpeta. El servidor busca en la raíz (`application.yml` compartido) y en la subcarpeta del servicio que hace la petición (`{application}/`).
@@ -46,6 +52,17 @@ application.yml           ← propiedades compartidas por todos los servicios
 
 ### Consultar la configuración servida
 
+El Config Server expone una API REST con el siguiente patrón de URL:
+
+```
+GET /{application}/{profile}
+GET /{application}/{profile}/{label}
+GET /{application}-{profile}.yml
+GET /{application}-{profile}.properties
+```
+
+Ambos segmentos son **obligatorios**: `{application}` es el `spring.application.name` del servicio cliente y `{profile}` es el perfil activo. No existe ninguna ruta `/desarrollo` o `/produccion` de forma aislada; siempre hay que incluir el nombre del servicio.
+
 ```bash
 # Configuración fusionada de un servicio (perfil por defecto)
 curl http://localhost:8888/config-client/default
@@ -58,6 +75,8 @@ curl http://localhost:8888/config-client/produccion
 curl http://localhost:8888/config-client-desarrollo.yml
 curl http://localhost:8888/config-client-produccion.yml
 ```
+
+> Estas URLs sirven para **inspeccionar** qué configuración recibiría un servicio sin necesidad de arrancarlo. No son endpoints del servicio cliente — pertenecen al Config Server.
 
 ## Arranque
 

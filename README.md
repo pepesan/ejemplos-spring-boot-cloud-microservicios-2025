@@ -115,9 +115,14 @@ Sirve los YAML de `config-repo/` a todos los clientes.
 ./gradlew :config-server:bootRun
 ```
 
+La API REST del Config Server usa siempre el patrón `/{application}/{profile}` — ambos segmentos son obligatorios. Para verificar qué configuración serviría a `config-client`:
+
+```bash
+curl http://localhost:8888/config-client/default
+curl http://localhost:8888/config-client/desarrollo
+```
+
 Revisa en el Eureka Server si está visible el Config Server.
-
-
 
 ---
 
@@ -145,7 +150,11 @@ Demuestra el consumo del Config Server con soporte de perfiles.
 Revisa en el Eureka Server si está visible el Config Client.
 
 ```bash
+# Solo devuelve el subconjunto app.* (entorno, mensaje, limitePeticiones, perfilesActivos)
 curl http://localhost:8082/config
+
+# Para ver TODA la configuración cargada desde el Config Server:
+curl http://localhost:8082/actuator/env
 ```
 
 ### Paso 4 — eureka-client `→ :8081`

@@ -159,7 +159,7 @@ Si el `config-server` no está arrancado, el cliente inicia igualmente (por el p
 curl http://localhost:8082/config
 ```
 
-Respuesta de ejemplo con perfil `desarrollo`:
+Devuelve únicamente las propiedades del prefijo `app.*` mapeadas en `AppProperties`, no toda la configuración cargada. Respuesta de ejemplo con perfil `desarrollo`:
 
 ```json
 {
@@ -168,6 +168,12 @@ Respuesta de ejemplo con perfil `desarrollo`:
   "limitePeticiones": 10,
   "perfilesActivos": ["desarrollo"]
 }
+```
+
+Para ver **toda** la configuración cargada desde el Config Server (todas las property sources y sus valores efectivos), usar Actuator:
+
+```bash
+curl http://localhost:8082/actuator/env
 ```
 
 ## Consultar la configuración directamente en el Config Server
@@ -203,7 +209,7 @@ spring:
 
 | Método | Ruta | Descripción | Tipo reactivo |
 |---|---|---|---|
-| `GET` | `/config` | Propiedades activas recibidas del Config Server | `Mono<Map>` |
+| `GET` | `/config` | Subconjunto `app.*` recibido del Config Server (entorno, mensaje, limitePeticiones, perfilesActivos) | `Mono<Map>` |
 
 ## Tracing distribuido
 
